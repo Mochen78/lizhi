@@ -45,6 +45,10 @@ This board tracks stability work that matters for long-term development, not jus
   - incremental sync
   - concurrent sync protection
   - detail content fetch strategy
+- [ ] Define an LLM summary pipeline contract:
+  - process only new or `content_hash`-changed content
+  - store structured JSON output plus model and prompt metadata
+  - guarantee sync fallback when LLM is unavailable or returns invalid output
 - [ ] Add a query hardening note covering:
   - search strategy
   - pagination strategy

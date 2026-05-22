@@ -31,6 +31,11 @@ Aligned decisions:
 
 ## 1. Iteration Goal
 
+### Additional Alignment Note
+
+- LLM may be used for one-time summary generation and structured signal extraction for new or changed content.
+- Final `participation_status`, `time_status`, and `ranking_score` must remain rule-derived backend fields.
+
 本轮迭代不再把目标定义成“把内容同步下来并做基础过滤”，而是要把系统升级为一个**规则优先、机会优先、时效优先**的校园信息机会引擎。
 
 本轮必须解决的核心变化是：
@@ -249,6 +254,25 @@ flowchart LR
 
 ---
 
+### 6.3 LLM-Assisted Processing Boundary
+
+```mermaid
+flowchart TD
+    A["raw payload"] --> B["rule pre-screen"]
+    B --> C{"needs LLM?"}
+    C -->|yes| D["LLM summary + structured extraction"]
+    C -->|no| E["rule fallback summary"]
+    D --> F["rule validation / normalization"]
+    E --> F
+    F --> G["participation_status + ranking_score"]
+    G --> H["query projection"]
+```
+
+- Rule pre-screen should remove obviously opinion-only, emotional, or irrelevant content before any model call.
+- LLM processing should run only for new content or when `content_hash` changes.
+- LLM output is candidate structured data, not final business truth.
+- Rule validation remains responsible for final status assignment and ranking computation.
+
 ## 7. Data Storage Strategy
 
 ### 7.1 Why Storage Strategy Is Now A Product Requirement
@@ -322,6 +346,27 @@ flowchart LR
 - 没有摘要时，使用规则抽取前若干有效句
 - 摘要服务于筛选和浏览，不服务于“重写原文”
 
+Summary generation contract for the next implementation round:
+
+- If an upstream summary already exists and is usable, keep it as the default source.
+- If no usable upstream summary exists, prefer one-time LLM summary generation plus structured extraction.
+- If LLM fails, times out, or returns invalid structure, fall back to deterministic high-information sentence extraction.
+- Summary exists to support feed scanning, search, and filtering. It is not meant to rewrite the original article.
+
+### 7.4.1 LLM Summary Contract
+
+- LLM should return both a short user-facing summary and structured candidate fields.
+- The summary should preserve action, time, audience, and benefit signals when possible.
+- LLM must not decide final `participation_status`.
+- LLM must not decide final `ranking_score`.
+
+### 7.4.2 Fallback Strategy
+
+- upstream summary exists -> use upstream summary
+- no upstream summary and valid LLM output -> use LLM summary
+- no upstream summary and no valid LLM output -> use deterministic extraction
+- if no stable summary candidate exists -> allow empty summary
+
 ### 7.5 Storage Topology
 
 ```mermaid
@@ -369,6 +414,41 @@ erDiagram
 ```
 
 ---
+
+Normalized post should also retain these implementation-facing fields:
+
+- `content_hash`
+- `llm_summary`
+- `llm_structured_json`
+- `llm_model`
+- `llm_prompt_version`
+- `llm_status`
+- `llm_processed_at`
+
+### 7.6 Suggested LLM Output Shape
+
+LLM response should be stored as structured JSON instead of only plain text:
+
+```json
+{
+  "summary": "面向全校学生的讲座报名通知，截止到5月28日18:00。",
+  "is_opportunity": true,
+  "is_recap": false,
+  "event_type": "lecture",
+  "audience": ["全校学生"],
+  "call_to_action": ["报名"],
+  "deadline_text": "5月28日18:00",
+  "start_time_text": "",
+  "end_time_text": "",
+  "key_evidence": [
+    "讲座报名开启",
+    "截止时间为5月28日18:00"
+  ]
+}
+```
+
+- LLM time values should first be stored as text candidates.
+- Final datetime parsing should still be handled by backend rule parsers.
 
 ## 8. Rule Systems
 
@@ -474,6 +554,8 @@ flowchart TD
 2. 有明确动作词且未过期 -> `participable`
 3. 无法确认但疑似机会 -> `uncertain`
 
+LLM may provide candidate signals such as `is_opportunity` and `is_recap`, but final `participation_status` must still be assigned by backend rules.
+
 ### 8.6 Timeliness Governance
 
 | scenario | time_status | timeliness_level | default behavior |
@@ -490,6 +572,8 @@ flowchart TD
 ### 9.1 Ranking Requirement
 
 本项目的主排序必须是**规则排序**，不能依赖 LLM 打分。
+
+LLM may assist with summary generation and candidate structured extraction, but it must not become the final ranking engine.
 
 ### 9.2 Ranking Inputs
 
@@ -649,6 +733,7 @@ stateDiagram-v2
 - `derive_timeliness_level()`
 - `derive_participation_status()`
 - `compute_ranking_score()`
+- `merge_llm_output_with_rule_fields()`
 
 ### 12.2 Integration Tests
 
@@ -659,6 +744,8 @@ stateDiagram-v2
 - 排序优先返回高价值未过期机会
 - 搜索覆盖标题、摘要、来源
 - 详情接口对不存在资源返回 `404`
+- LLM success path writes summary and structured output once for a new or changed article
+- LLM failure path does not block sync and falls back to deterministic summary generation
 
 ### 12.3 Data Integrity Tests
 
@@ -668,6 +755,7 @@ stateDiagram-v2
 - 时间字段持久化正确
 - 重复同步不会产生重复帖子
 - 同步统计与实际落库数量一致
+- unchanged content does not retrigger LLM unless `content_hash` changes
 
 ### 12.4 Scale Regression Tests
 

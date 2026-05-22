@@ -32,6 +32,7 @@ The team has now aligned these product and architecture choices:
 - `ranking_score` will be a formal rule-derived field
 - storage direction is `raw payload + normalized post + query projection`
 - summary is the default feed-facing representation; original content is reference and fallback
+- LLM may be used for one-time summary generation and candidate structured extraction, but final ranking and final business-state judgment stay rule-derived
 
 ## Agreed Layer Boundaries
 
