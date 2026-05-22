@@ -5,7 +5,7 @@ from datetime import datetime
 from pydantic import BaseModel
 
 
-class ArticleItemResponse(BaseModel):
+class PostItemResponse(BaseModel):
     id: int
     source_id: int
     source_name: str
@@ -16,16 +16,24 @@ class ArticleItemResponse(BaseModel):
     published_at: datetime | None
     content_status: str
     content_type: str
-    display_level: str
+    primary_category: str
     categories: list[str]
+    event_start_at: datetime | None
+    event_end_at: datetime | None
+    deadline_at: datetime | None
+    time_status: str
+    timeliness_level: str
+    participation_status: str
+    ranking_score: float
+    display_level: str
 
 
-class ArticleDetailResponse(ArticleItemResponse):
+class PostDetailResponse(PostItemResponse):
     content_html: str
 
 
-class PagedArticlesResponse(BaseModel):
-    items: list[ArticleItemResponse]
+class PagedPostsResponse(BaseModel):
+    items: list[PostItemResponse]
     total: int
     offset: int
     limit: int
@@ -39,6 +47,8 @@ class CategoryCountResponse(BaseModel):
 class CategoryStatsResponse(BaseModel):
     categories: list[CategoryCountResponse]
     content_type_stats: dict[str, int]
+    participation_stats: dict[str, int]
+    time_status_stats: dict[str, int]
 
 
 class SourceResponse(BaseModel):
@@ -49,7 +59,7 @@ class SourceResponse(BaseModel):
     status: str
     cover_url: str
     intro: str
-    article_count: int
+    post_count: int
     last_synced_at: datetime | None
 
 
@@ -69,9 +79,12 @@ class SyncJobResponse(BaseModel):
     trigger_type: str
     status: str
     sources_synced: int
-    articles_fetched: int
-    articles_inserted: int
-    articles_updated: int
+    posts_fetched: int
+    posts_inserted: int
+    posts_updated: int
+    posts_discarded: int
+    discarded_count: int
+    discard_stats_by_reason: dict[str, int]
     error_summary: str
     started_at: datetime | None
     finished_at: datetime | None
@@ -82,4 +95,3 @@ class HealthResponse(BaseModel):
     status: str
     database: str
     upstream_configured: bool
-

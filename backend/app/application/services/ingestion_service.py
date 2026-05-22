@@ -1,20 +1,44 @@
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
+from collections import Counter
 from datetime import datetime, timezone
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session, sessionmaker
 
-_logger = logging.getLogger(__name__)
-
 from app.application.classification import (
+    PRESCREEN_RULE_VERSION,
+    build_summary,
     classify_categories,
     classify_content_type,
+    compute_content_hash,
+    compute_ranking_score,
+    compute_title_hash,
     derive_display_level,
+    derive_participation_status,
+    derive_time_status,
+    extract_time_signals,
+    html_to_text,
+    normalize_whitespace,
+    prescreen_post,
+    sanitize_html,
 )
-from app.db.models import Article, ArticleCategory, Source, SyncJob, SyncJobItem
-from app.domain.enums import ContentStatus, IngestionStatus, SourceStatus, SyncStage, SyncStatus, SyncTriggerType
+from app.application.services.llm_service import LlmService
+from app.db.models import DiscardedPost, Post, PostCategory, PostProjection, RawPayload, Source, SyncJob, SyncJobItem
+from app.domain.enums import (
+    ContentStatus,
+    IngestionStatus,
+    LlmStatus,
+    SourceStatus,
+    SyncStage,
+    SyncStatus,
+    SyncTriggerType,
+)
+
+_logger = logging.getLogger(__name__)
 
 
 class IngestionService:
@@ -22,8 +46,14 @@ class IngestionService:
         self.session_factory = session_factory
         self.connector = connector
         self.settings = settings
+        self.llm_service = LlmService(settings)
+        self._lock = asyncio.Lock()
 
     async def run_sync(self, trigger_type: SyncTriggerType) -> SyncJob:
+        async with self._lock:
+            return await self._run_sync_locked(trigger_type)
+
+    async def _run_sync_locked(self, trigger_type: SyncTriggerType) -> SyncJob:
         db = self.session_factory()
         job = SyncJob(trigger_type=trigger_type.value, status=SyncStatus.PENDING.value)
         db.add(job)
@@ -35,7 +65,7 @@ class IngestionService:
         db.commit()
 
         source_failures: list[str] = []
-        fatal_error = ""
+        discard_counter: Counter[str] = Counter()
 
         try:
             source_stage = self._start_item(db, job.id, None, SyncStage.FETCH_SOURCES.value)
@@ -47,70 +77,17 @@ class IngestionService:
             db.commit()
 
             for source in sources:
-                fetch_item = self._start_item(db, job.id, source.id, SyncStage.FETCH_ARTICLES.value)
                 try:
-                    raw_articles = await self.connector.fetch_articles(
-                        source_id=source.upstream_source_id,
-                        limit=self.settings.article_fetch_limit,
-                    )
-                    if len(raw_articles) > 0:
-                        _logger.info("source %s has %d articles", source.upstream_source_id, len(raw_articles))
-                    fetch_item.item_count = len(raw_articles)
-                    self._finish_item(db, fetch_item, SyncStatus.COMPLETED.value)
-
-                    normalize_item = self._start_item(db, job.id, source.id, SyncStage.NORMALIZE.value)
-                    persist_item = self._start_item(db, job.id, source.id, SyncStage.PERSIST.value)
-
-                    normalized_count = 0
-                    for raw_article in raw_articles:
-                        created = self._upsert_article(db, source, raw_article)
-                        normalized_count += 1
-                        job.articles_inserted += 1 if created else 0
-                        job.articles_updated += 0 if created else 1
-
-                    # Fetch content for articles that lack it
-                    content_item = self._start_item(db, job.id, source.id, "fetch_content")
-                    content_count = 0
-                    for raw_article in raw_articles:
-                        article_id = str(raw_article.get("id", "")).strip()
-                        if not article_id:
-                            continue
-                        article = db.query(Article).filter(Article.upstream_article_id == article_id).first()
-                        if article is None:
-                            _logger.debug("content fetch: article %s not found in db", article_id)
-                            continue
-                        if article.content_html:
-                            continue
-                        try:
-                            detail = await self.connector.fetch_article_detail(article_id)
-                        except Exception as exc:
-                            _logger.warning("content fetch failed for %s: %s", article_id, exc)
-                            continue
-                        if detail and detail.get("content_html"):
-                            article.content_html = detail["content_html"]
-                            article.content_status = ContentStatus.READY.value
-                            db.add(article)
-                            content_count += 1
-                        else:
-                            _logger.debug("content fetch: no content_html for %s (detail=%s)", article_id, bool(detail))
-                    db.commit()
-                    content_item.item_count = content_count
-                    self._finish_item(db, content_item, SyncStatus.COMPLETED.value)
-
-                    normalize_item.item_count = normalized_count
-                    persist_item.item_count = normalized_count
-                    self._finish_item(db, normalize_item, SyncStatus.COMPLETED.value)
-                    self._finish_item(db, persist_item, SyncStatus.COMPLETED.value)
-
+                    await self._sync_source(db, job, source, discard_counter)
                     job.sources_synced += 1
-                    job.articles_fetched += len(raw_articles)
-                    source.article_count = db.query(func.count(Article.id)).filter(Article.source_id == source.id).scalar() or 0
+                    source.post_count = db.query(func.count(Post.id)).filter(Post.source_id == source.id).scalar() or 0
                     source.last_synced_at = datetime.now(timezone.utc)
+                    db.add(source)
                     db.commit()
                 except Exception as exc:  # noqa: BLE001
                     db.rollback()
                     source_failures.append(f"{source.name}: {exc}")
-                    self._fail_item(db, fetch_item, str(exc))
+                    _logger.exception("source sync failed for %s", source.upstream_source_id)
 
             if source_failures and job.sources_synced > 0:
                 job.status = SyncStatus.PARTIAL_FAILED.value
@@ -120,13 +97,13 @@ class IngestionService:
                 job.error_summary = "\n".join(source_failures)
             else:
                 job.status = SyncStatus.COMPLETED.value
-
         except Exception as exc:  # noqa: BLE001
             db.rollback()
-            fatal_error = str(exc)
             job.status = SyncStatus.FAILED.value
-            job.error_summary = fatal_error
+            job.error_summary = str(exc)
         finally:
+            job.posts_discarded = sum(discard_counter.values())
+            job.discard_stats_json = json.dumps(dict(sorted(discard_counter.items())), ensure_ascii=False)
             job.finished_at = datetime.now(timezone.utc)
             db.add(job)
             db.commit()
@@ -134,6 +111,149 @@ class IngestionService:
             db.close()
 
         return job
+
+    async def _sync_source(self, db: Session, job: SyncJob, source: Source, discard_counter: Counter[str]) -> None:
+        fetch_item = self._start_item(db, job.id, source.id, SyncStage.FETCH_POSTS.value)
+        raw_posts = await self.connector.fetch_posts(
+            source_id=source.upstream_source_id,
+            limit=self.settings.post_fetch_limit,
+        )
+        fetch_item.item_count = len(raw_posts)
+        self._finish_item(db, fetch_item, SyncStatus.COMPLETED.value)
+        job.posts_fetched += len(raw_posts)
+
+        prescreen_item = self._start_item(db, job.id, source.id, SyncStage.PRESCREEN.value)
+        store_item = self._start_item(db, job.id, source.id, SyncStage.STORE_RAW_PAYLOAD.value)
+        detail_item = self._start_item(db, job.id, source.id, SyncStage.FETCH_DETAIL.value)
+        normalize_item = self._start_item(db, job.id, source.id, SyncStage.NORMALIZE.value)
+        llm_item = self._start_item(db, job.id, source.id, SyncStage.LLM_EXTRACT.value)
+        project_item = self._start_item(db, job.id, source.id, SyncStage.PROJECT.value)
+        persist_item = self._start_item(db, job.id, source.id, SyncStage.PERSIST.value)
+
+        prescreened_count = 0
+        stored_count = 0
+        detail_count = 0
+        normalized_count = 0
+        llm_count = 0
+        projected_count = 0
+
+        for raw_post in raw_posts:
+            upstream_post_id = str(raw_post.get("id") or "").strip()
+            if not upstream_post_id:
+                continue
+            title = str(raw_post.get("title") or "")
+            summary = str(raw_post.get("description") or "")
+            source_name = source.name
+            body_excerpt = html_to_text(str(raw_post.get("content_html") or ""))[:200]
+            decision = prescreen_post(title=title, summary=summary, source_name=source_name, body_excerpt=body_excerpt)
+            if decision.discard:
+                self._upsert_discarded_post(
+                    db,
+                    source=source,
+                    upstream_post_id=upstream_post_id,
+                    title=title,
+                    decision=decision,
+                )
+                discard_counter[decision.reason] += 1
+                prescreened_count += 1
+                continue
+
+            raw_payload, payload_hash = self._upsert_raw_payload(db, source=source, raw_post=raw_post)
+            stored_count += 1 if raw_payload else 0
+
+            detail = await self._fetch_detail_if_needed(raw_post, upstream_post_id)
+            if detail:
+                raw_post = {**raw_post, **detail}
+                detail_count += 1
+
+            content_html = sanitize_html(str(raw_post.get("content_html") or ""))
+            content_text = html_to_text(content_html)
+            secondary_decision = prescreen_post(
+                title=title,
+                summary=summary,
+                source_name=source_name,
+                body_excerpt=content_text[:400],
+            )
+            if secondary_decision.discard:
+                self._upsert_discarded_post(
+                    db,
+                    source=source,
+                    upstream_post_id=upstream_post_id,
+                    title=title,
+                    decision=secondary_decision,
+                )
+                discard_counter[secondary_decision.reason] += 1
+                continue
+
+            content_hash = compute_content_hash(
+                title,
+                summary,
+                raw_post.get("url", ""),
+                content_text[:2000],
+                payload_hash,
+            )
+            post = db.query(Post).filter(Post.upstream_post_id == upstream_post_id).first()
+            existing_hash = post.content_hash if post else ""
+            changed = content_hash != existing_hash
+            llm_result = {
+                "summary": "",
+                "structured": {},
+                "status": LlmStatus.NOT_REQUESTED.value,
+                "model": "",
+                "processed_at": None,
+            }
+            if changed:
+                llm_result = await self.llm_service.summarize_and_extract(title=title, summary=summary, content_text=content_text)
+                if llm_result["status"] == LlmStatus.COMPLETED.value:
+                    llm_count += 1
+                elif not normalize_whitespace(summary):
+                    llm_result["status"] = LlmStatus.FALLBACK.value
+
+            post, created = self._upsert_post(
+                db,
+                source=source,
+                raw_post=raw_post,
+                content_html=content_html,
+                content_text=content_text,
+                content_hash=content_hash,
+                llm_result=llm_result,
+                changed=changed,
+            )
+            normalized_count += 1
+            job.posts_inserted += 1 if created else 0
+            job.posts_updated += 0 if created else 1
+
+            self._upsert_projection(db, post)
+            projected_count += 1
+
+        db.commit()
+        prescreen_item.item_count = prescreened_count
+        store_item.item_count = stored_count
+        detail_item.item_count = detail_count
+        normalize_item.item_count = normalized_count
+        llm_item.item_count = llm_count
+        project_item.item_count = projected_count
+        persist_item.item_count = normalized_count
+        self._finish_item(db, prescreen_item, SyncStatus.COMPLETED.value)
+        self._finish_item(db, store_item, SyncStatus.COMPLETED.value)
+        self._finish_item(db, detail_item, SyncStatus.COMPLETED.value)
+        self._finish_item(db, normalize_item, SyncStatus.COMPLETED.value)
+        self._finish_item(db, llm_item, SyncStatus.COMPLETED.value)
+        self._finish_item(db, project_item, SyncStatus.COMPLETED.value)
+        self._finish_item(db, persist_item, SyncStatus.COMPLETED.value)
+
+    async def _fetch_detail_if_needed(self, raw_post: dict, upstream_post_id: str) -> dict:
+        if raw_post.get("content_html"):
+            return {}
+        fetch_detail = getattr(self.connector, "fetch_post_detail", None)
+        if fetch_detail is None:
+            return {}
+        try:
+            detail = await fetch_detail(upstream_post_id)
+        except Exception as exc:  # noqa: BLE001
+            _logger.warning("detail fetch failed for %s: %s", upstream_post_id, exc)
+            return {}
+        return detail or {}
 
     def _start_item(self, db: Session, sync_job_id: int, source_id: int | None, stage: str) -> SyncJobItem:
         item = SyncJobItem(sync_job_id=sync_job_id, source_id=source_id, stage=stage, status=SyncStatus.RUNNING.value)
@@ -144,13 +264,6 @@ class IngestionService:
 
     def _finish_item(self, db: Session, item: SyncJobItem, status: str) -> None:
         item.status = status
-        item.finished_at = datetime.now(timezone.utc)
-        db.add(item)
-        db.commit()
-
-    def _fail_item(self, db: Session, item: SyncJobItem, error_message: str) -> None:
-        item.status = SyncStatus.FAILED.value
-        item.error_message = error_message
         item.finished_at = datetime.now(timezone.utc)
         db.add(item)
         db.commit()
@@ -182,65 +295,160 @@ class IngestionService:
         db.flush()
         return source
 
-    def _upsert_article(self, db: Session, source: Source, raw_article: dict) -> bool:
-        upstream_article_id = str(raw_article.get("id") or "").strip()
-        if not upstream_article_id:
-            raise ValueError("article is missing upstream id")
+    def _upsert_raw_payload(self, db: Session, *, source: Source, raw_post: dict) -> tuple[RawPayload, str]:
+        upstream_post_id = str(raw_post.get("id") or "").strip()
+        payload_json = json.dumps(raw_post, ensure_ascii=False, sort_keys=True)
+        payload_hash = compute_content_hash(payload_json)
+        payload = (
+            db.query(RawPayload)
+            .filter(RawPayload.source_id == source.id, RawPayload.upstream_post_id == upstream_post_id)
+            .first()
+        )
+        if payload is None:
+            payload = RawPayload(
+                source_id=source.id,
+                upstream_post_id=upstream_post_id,
+                payload_json=payload_json,
+                payload_hash=payload_hash,
+            )
+            db.add(payload)
+            db.flush()
+        else:
+            payload.payload_json = payload_json
+            payload.payload_hash = payload_hash
+            payload.fetched_at = datetime.now(timezone.utc)
+            db.add(payload)
+            db.flush()
+        return payload, payload_hash
 
-        summary = raw_article.get("description", "")
-        title = raw_article.get("title", "")
-        content_html = raw_article.get("content_html", "") or ""
-        categories = classify_categories(title, summary)
-        content_type = classify_content_type(title, summary)
-        display_level = derive_display_level(content_type)
-        publish_time = raw_article.get("publish_time")
+    def _upsert_discarded_post(
+        self,
+        db: Session,
+        *,
+        source: Source,
+        upstream_post_id: str,
+        title: str,
+        decision,
+    ) -> None:
+        discarded = db.query(DiscardedPost).filter(DiscardedPost.upstream_post_id == upstream_post_id).first()
+        if discarded is None:
+            discarded = DiscardedPost(
+                upstream_post_id=upstream_post_id,
+                source_id=source.id,
+                title_hash=compute_title_hash(title),
+            )
+        discarded.source_id = source.id
+        discarded.discard_reason = decision.reason
+        discarded.discard_stage = SyncStage.PRESCREEN.value
+        discarded.matched_rule_version = PRESCREEN_RULE_VERSION
+        discarded.matched_fields = json.dumps(decision.matched_fields or [], ensure_ascii=False)
+        discarded.matched_keywords = json.dumps(decision.matched_keywords or [], ensure_ascii=False)
+        discarded.quality_signals = json.dumps(decision.quality_signals or {}, ensure_ascii=False)
+        discarded.discarded_at = datetime.now(timezone.utc)
+        db.add(discarded)
+        db.flush()
+
+    def _upsert_post(
+        self,
+        db: Session,
+        *,
+        source: Source,
+        raw_post: dict,
+        content_html: str,
+        content_text: str,
+        content_hash: str,
+        llm_result: dict,
+        changed: bool,
+    ) -> tuple[Post, bool]:
+        upstream_post_id = str(raw_post.get("id") or "").strip()
+        publish_time = raw_post.get("publish_time")
         if isinstance(publish_time, (int, float)):
             publish_time = datetime.fromtimestamp(publish_time, tz=timezone.utc)
         elif not isinstance(publish_time, datetime):
             publish_time = None
 
-        article = db.query(Article).filter(Article.upstream_article_id == upstream_article_id).first()
-        created = article is None
-        if article is None:
-            article = Article(
-                upstream_article_id=upstream_article_id,
+        post = db.query(Post).filter(Post.upstream_post_id == upstream_post_id).first()
+        created = post is None
+        if post is None:
+            post = Post(
+                upstream_post_id=upstream_post_id,
                 source_id=source.id,
                 source_name_snapshot=source.name,
-                title=title,
-                summary=summary,
-                original_url=raw_article.get("url", ""),
-                cover_url=raw_article.get("pic_url", ""),
+                title=str(raw_post.get("title") or ""),
+                original_url=str(raw_post.get("url") or ""),
+                cover_url=str(raw_post.get("pic_url") or ""),
                 published_at=publish_time,
-                content_html=content_html,
-                content_status=ContentStatus.READY.value if content_html else ContentStatus.MISSING.value,
-                content_type=content_type.value,
-                display_level=display_level.value,
                 ingestion_status=IngestionStatus.NEW.value,
+                content_hash=content_hash,
             )
-            db.add(article)
-            db.flush()
-        else:
-            article.source_id = source.id
-            article.source_name_snapshot = source.name
-            article.title = title
-            article.summary = summary
-            article.original_url = raw_article.get("url", "")
-            article.cover_url = raw_article.get("pic_url", "")
-            article.published_at = publish_time
-            if content_html:
-                article.content_html = content_html
-                article.content_status = ContentStatus.READY.value
-            article.content_type = content_type.value
-            article.display_level = display_level.value
-            article.ingestion_status = IngestionStatus.UPDATED.value
-            article.categories.clear()
-            db.add(article)
+            db.add(post)
             db.flush()
 
-        article.categories = [
-            ArticleCategory(category_code=category_code, category_source="rule_engine")
-            for category_code in categories
-        ]
-        db.add(article)
+        post.source_id = source.id
+        post.source_name_snapshot = source.name
+        post.title = str(raw_post.get("title") or "")
+        post.original_url = str(raw_post.get("url") or "")
+        post.cover_url = str(raw_post.get("pic_url") or "")
+        post.published_at = publish_time
+        post.content_html = content_html
+        post.content_text_snapshot = content_text[:8000]
+        post.content_status = ContentStatus.READY.value if content_html else ContentStatus.MISSING.value
+        post.content_hash = content_hash
+        post.ingestion_status = IngestionStatus.NEW.value if created else (IngestionStatus.UPDATED.value if changed else IngestionStatus.UNCHANGED.value)
+        post.llm_status = llm_result["status"]
+        post.llm_model = llm_result["model"] or ""
+        post.llm_prompt_version = self.settings.llm_prompt_version if llm_result["status"] != LlmStatus.NOT_REQUESTED.value else ""
+        post.llm_processed_at = llm_result["processed_at"]
+        post.llm_structured_json = json.dumps(llm_result["structured"], ensure_ascii=False) if llm_result["structured"] else ""
+        post.llm_summary = llm_result["summary"] or ""
+        post.summary = build_summary(
+            title=post.title,
+            upstream_summary=str(raw_post.get("description") or ""),
+            llm_summary=post.llm_summary,
+            content_text=content_text,
+        )
+        db.add(post)
         db.flush()
-        return created
+
+        categories = list(dict.fromkeys(classify_categories(post.title, post.summary, content_text)))
+        db.query(PostCategory).filter(PostCategory.post_id == post.id).delete()
+        db.flush()
+        post.categories = [PostCategory(category_code=category_code, category_source="rule_engine") for category_code in categories]
+        db.add(post)
+        db.flush()
+        return post, created
+
+    def _upsert_projection(self, db: Session, post: Post) -> None:
+        content_type = classify_content_type(post.title, post.summary, post.content_text_snapshot)
+        categories = [category.category_code for category in post.categories] or ["other"]
+        primary_category = categories[0]
+        time_signals = extract_time_signals(post.title, post.summary, post.content_text_snapshot, post.published_at)
+        time_status, timeliness_level = derive_time_status(time_signals)
+        participation_status = derive_participation_status(
+            content_type=content_type,
+            time_status=time_status,
+            text=normalize_whitespace(f"{post.title} {post.summary} {post.content_text_snapshot}"),
+        )
+        display_level = derive_display_level(content_type, timeliness_level)
+        ranking_score = compute_ranking_score(
+            participation_status=participation_status,
+            content_type=content_type,
+            primary_category=primary_category,
+            time_status=time_status,
+            deadline_at=time_signals.deadline_at,
+            published_at=post.published_at,
+        )
+
+        projection = post.projection or PostProjection(post_id=post.id)
+        projection.primary_category = primary_category
+        projection.content_type = content_type.value
+        projection.event_start_at = time_signals.event_start_at
+        projection.event_end_at = time_signals.event_end_at
+        projection.deadline_at = time_signals.deadline_at
+        projection.time_status = time_status.value
+        projection.timeliness_level = timeliness_level.value
+        projection.participation_status = participation_status.value
+        projection.ranking_score = ranking_score
+        projection.display_level = display_level.value
+        db.add(projection)
+        db.flush()

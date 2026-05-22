@@ -1,35 +1,46 @@
 from __future__ import annotations
 
-from app.db.models import Article, Source, SyncJob, SyncJobItem
+import json
+
+from app.db.models import Post, Source, SyncJob, SyncJobItem
 from app.schemas.responses import (
-    ArticleDetailResponse,
-    ArticleItemResponse,
+    PostDetailResponse,
+    PostItemResponse,
     SourceResponse,
     SyncJobItemResponse,
     SyncJobResponse,
 )
 
 
-def serialize_article(article: Article) -> ArticleItemResponse:
-    return ArticleItemResponse(
-        id=article.id,
-        source_id=article.source_id,
-        source_name=article.source_name_snapshot,
-        title=article.title,
-        summary=article.summary,
-        original_url=article.original_url,
-        cover_url=article.cover_url,
-        published_at=article.published_at,
-        content_status=article.content_status,
-        content_type=article.content_type,
-        display_level=article.display_level,
-        categories=[category.category_code for category in article.categories],
+def serialize_post(post: Post) -> PostItemResponse:
+    projection = post.projection
+    return PostItemResponse(
+        id=post.id,
+        source_id=post.source_id,
+        source_name=post.source_name_snapshot,
+        title=post.title,
+        summary=post.summary,
+        original_url=post.original_url,
+        cover_url=post.cover_url,
+        published_at=post.published_at,
+        content_status=post.content_status,
+        content_type=projection.content_type if projection else "unknown",
+        primary_category=projection.primary_category if projection else "other",
+        categories=[category.category_code for category in post.categories],
+        event_start_at=projection.event_start_at if projection else None,
+        event_end_at=projection.event_end_at if projection else None,
+        deadline_at=projection.deadline_at if projection else None,
+        time_status=projection.time_status if projection else "undated",
+        timeliness_level=projection.timeliness_level if projection else "low",
+        participation_status=projection.participation_status if projection else "uncertain",
+        ranking_score=projection.ranking_score if projection else 0.0,
+        display_level=projection.display_level if projection else "low",
     )
 
 
-def serialize_article_detail(article: Article) -> ArticleDetailResponse:
-    base = serialize_article(article).model_dump()
-    return ArticleDetailResponse(**base, content_html=article.content_html)
+def serialize_post_detail(post: Post) -> PostDetailResponse:
+    base = serialize_post(post).model_dump()
+    return PostDetailResponse(**base, content_html=post.content_html)
 
 
 def serialize_source(source: Source) -> SourceResponse:
@@ -41,7 +52,7 @@ def serialize_source(source: Source) -> SourceResponse:
         status=source.status,
         cover_url=source.cover_url,
         intro=source.intro,
-        article_count=source.article_count,
+        post_count=source.post_count,
         last_synced_at=source.last_synced_at,
     )
 
@@ -60,17 +71,23 @@ def serialize_sync_job_item(item: SyncJobItem) -> SyncJobItemResponse:
 
 
 def serialize_sync_job(job: SyncJob) -> SyncJobResponse:
+    try:
+        discard_stats = json.loads(job.discard_stats_json or "{}")
+    except json.JSONDecodeError:
+        discard_stats = {}
     return SyncJobResponse(
         id=job.id,
         trigger_type=job.trigger_type,
         status=job.status,
         sources_synced=job.sources_synced,
-        articles_fetched=job.articles_fetched,
-        articles_inserted=job.articles_inserted,
-        articles_updated=job.articles_updated,
+        posts_fetched=job.posts_fetched,
+        posts_inserted=job.posts_inserted,
+        posts_updated=job.posts_updated,
+        posts_discarded=job.posts_discarded,
+        discarded_count=job.posts_discarded,
+        discard_stats_by_reason=discard_stats,
         error_summary=job.error_summary,
         started_at=job.started_at,
         finished_at=job.finished_at,
         items=[serialize_sync_job_item(item) for item in job.items],
     )
-

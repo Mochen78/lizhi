@@ -7,8 +7,8 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import FastAPI
 import uvicorn
 
-from app.api.routes.articles import router as articles_router
 from app.api.routes.health import router as health_router
+from app.api.routes.posts import router as posts_router
 from app.api.routes.sources import router as sources_router
 from app.api.routes.sync import router as sync_router
 from app.application.services.ingestion_service import IngestionService
@@ -49,7 +49,7 @@ def create_app(settings: Settings | None = None, connector=None) -> FastAPI:
     app.state.query_service = query_service
     app.state.ingestion_service = ingestion_service
 
-    app.include_router(articles_router)
+    app.include_router(posts_router)
     app.include_router(sources_router)
     app.include_router(sync_router)
     app.include_router(health_router)

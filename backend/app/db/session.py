@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import Settings
@@ -20,4 +20,17 @@ def build_engine(settings: Settings):
 def build_session_factory(settings: Settings) -> tuple[object, sessionmaker[Session]]:
     engine = build_engine(settings)
     Base.metadata.create_all(bind=engine)
+    _drop_legacy_tables(engine)
     return engine, sessionmaker(bind=engine, autoflush=False, autocommit=False)
+
+
+def _drop_legacy_tables(engine) -> None:
+    inspector = inspect(engine)
+    existing = set(inspector.get_table_names())
+    legacy_tables = [name for name in ("article_categories", "articles") if name in existing]
+    if not legacy_tables:
+        return
+
+    with engine.begin() as connection:
+        for table in legacy_tables:
+            connection.execute(text(f"DROP TABLE IF EXISTS {table}"))

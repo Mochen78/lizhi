@@ -31,6 +31,32 @@ class IngestionStatus(StrEnum):
     UNCHANGED = "unchanged"
 
 
+class LlmStatus(StrEnum):
+    NOT_REQUESTED = "not_requested"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    FALLBACK = "fallback"
+
+
+class TimeStatus(StrEnum):
+    UPCOMING = "upcoming"
+    ONGOING = "ongoing"
+    EXPIRED = "expired"
+    UNDATED = "undated"
+
+
+class TimelinessLevel(StrEnum):
+    NORMAL = "normal"
+    LOW = "low"
+    HIDDEN = "hidden"
+
+
+class ParticipationStatus(StrEnum):
+    PARTICIPABLE = "participable"
+    UNCERTAIN = "uncertain"
+    NON_PARTICIPABLE = "non_participable"
+
+
 class SyncTriggerType(StrEnum):
     STARTUP = "startup"
     MANUAL = "manual"
@@ -47,7 +73,23 @@ class SyncStatus(StrEnum):
 
 class SyncStage(StrEnum):
     FETCH_SOURCES = "fetch_sources"
-    FETCH_ARTICLES = "fetch_articles"
+    FETCH_POSTS = "fetch_posts"
+    PRESCREEN = "prescreen"
+    STORE_RAW_PAYLOAD = "store_raw_payload"
+    FETCH_DETAIL = "fetch_detail"
     NORMALIZE = "normalize"
+    LLM_EXTRACT = "llm_extract"
+    PROJECT = "project"
     PERSIST = "persist"
 
+
+class DiscardReason(StrEnum):
+    RECAP = "recap"
+    CLOSURE = "closure"
+    CONGRATULATION = "congratulation"
+    PUBLICITY_RESULT = "publicity_result"
+    INTRODUCTION = "introduction"
+    OPINION = "opinion"
+    TUTORIAL = "tutorial"
+    RECORD_ONLY = "record_only"
+    GARBLED_HIDDEN_SOURCE = "garbled_hidden_source"

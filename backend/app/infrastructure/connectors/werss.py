@@ -68,7 +68,7 @@ class WerssConnector:
             offset += len(items)
         return all_items[:limit]
 
-    async def fetch_articles(self, source_id: str, limit: int) -> list[dict]:
+    async def fetch_posts(self, source_id: str, limit: int) -> list[dict]:
         response = await self._request(
             "GET",
             "/api/v1/wx/articles",
@@ -76,10 +76,10 @@ class WerssConnector:
         )
         return response.json().get("data", {}).get("list", [])
 
-    async def fetch_article_detail(self, article_id: str) -> dict | None:
+    async def fetch_post_detail(self, post_id: str) -> dict | None:
         response = await self._request(
             "GET",
-            f"/api/v1/wx/articles/{article_id}",
+            f"/api/v1/wx/articles/{post_id}",
         )
         payload = response.json()
         return payload.get("data") if payload.get("code") == 0 else None

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -27,49 +27,115 @@ class Source(TimestampMixin, Base):
     status: Mapped[str] = mapped_column(String(32), default="enabled")
     cover_url: Mapped[str] = mapped_column(String(1024), default="")
     intro: Mapped[str] = mapped_column(Text, default="")
-    article_count: Mapped[int] = mapped_column(Integer, default=0)
+    post_count: Mapped[int] = mapped_column(Integer, default=0)
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    articles: Mapped[list["Article"]] = relationship(back_populates="source")
+    raw_payloads: Mapped[list["RawPayload"]] = relationship(back_populates="source")
+    posts: Mapped[list["Post"]] = relationship(back_populates="source")
+    discarded_posts: Mapped[list["DiscardedPost"]] = relationship(back_populates="source")
 
 
-class Article(TimestampMixin, Base):
-    __tablename__ = "articles"
+class RawPayload(TimestampMixin, Base):
+    __tablename__ = "raw_payloads"
+    __table_args__ = (
+        UniqueConstraint("source_id", "upstream_post_id", name="uq_raw_payload_source_post"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    upstream_article_id: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    source_id: Mapped[int] = mapped_column(ForeignKey("sources.id"), index=True)
+    upstream_post_id: Mapped[str] = mapped_column(String(255), index=True)
+    payload_json: Mapped[str] = mapped_column(Text)
+    payload_hash: Mapped[str] = mapped_column(String(64), index=True)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    source: Mapped[Source] = relationship(back_populates="raw_payloads")
+
+
+class Post(TimestampMixin, Base):
+    __tablename__ = "posts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    upstream_post_id: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     source_id: Mapped[int] = mapped_column(ForeignKey("sources.id"), index=True)
     source_name_snapshot: Mapped[str] = mapped_column(String(255))
     title: Mapped[str] = mapped_column(String(500), index=True)
     summary: Mapped[str] = mapped_column(Text, default="")
+    llm_summary: Mapped[str] = mapped_column(Text, default="")
     original_url: Mapped[str] = mapped_column(String(2048), default="")
     cover_url: Mapped[str] = mapped_column(String(2048), default="")
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     content_html: Mapped[str] = mapped_column(Text, default="")
+    content_text_snapshot: Mapped[str] = mapped_column(Text, default="")
     content_status: Mapped[str] = mapped_column(String(32), default="missing")
-    content_type: Mapped[str] = mapped_column(String(32), default="unknown", index=True)
-    display_level: Mapped[str] = mapped_column(String(32), default="low", index=True)
+    content_hash: Mapped[str] = mapped_column(String(64), index=True)
+    llm_structured_json: Mapped[str] = mapped_column(Text, default="")
+    llm_model: Mapped[str] = mapped_column(String(128), default="")
+    llm_prompt_version: Mapped[str] = mapped_column(String(64), default="")
+    llm_status: Mapped[str] = mapped_column(String(32), default="not_requested")
+    llm_processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     ingestion_status: Mapped[str] = mapped_column(String(32), default="new")
 
-    source: Mapped[Source] = relationship(back_populates="articles")
-    categories: Mapped[list["ArticleCategory"]] = relationship(
-        back_populates="article",
+    source: Mapped[Source] = relationship(back_populates="posts")
+    categories: Mapped[list["PostCategory"]] = relationship(
+        back_populates="post",
         cascade="all, delete-orphan",
+    )
+    projection: Mapped["PostProjection | None"] = relationship(
+        back_populates="post",
+        cascade="all, delete-orphan",
+        uselist=False,
     )
 
 
-class ArticleCategory(Base):
-    __tablename__ = "article_categories"
+class PostCategory(Base):
+    __tablename__ = "post_categories"
     __table_args__ = (
-        UniqueConstraint("article_id", "category_code", name="uq_article_category_code"),
+        UniqueConstraint("post_id", "category_code", name="uq_post_category_code"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    article_id: Mapped[int] = mapped_column(ForeignKey("articles.id"), index=True)
+    post_id: Mapped[int] = mapped_column(ForeignKey("posts.id"), index=True)
     category_code: Mapped[str] = mapped_column(String(64), index=True)
     category_source: Mapped[str] = mapped_column(String(64), default="rule_engine")
 
-    article: Mapped[Article] = relationship(back_populates="categories")
+    post: Mapped[Post] = relationship(back_populates="categories")
+
+
+class PostProjection(TimestampMixin, Base):
+    __tablename__ = "post_projections"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    post_id: Mapped[int] = mapped_column(ForeignKey("posts.id"), unique=True, index=True)
+    primary_category: Mapped[str] = mapped_column(String(64), index=True)
+    content_type: Mapped[str] = mapped_column(String(32), default="unknown", index=True)
+    event_start_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    event_end_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deadline_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    time_status: Mapped[str] = mapped_column(String(32), default="undated", index=True)
+    timeliness_level: Mapped[str] = mapped_column(String(32), default="low", index=True)
+    participation_status: Mapped[str] = mapped_column(String(32), default="uncertain", index=True)
+    ranking_score: Mapped[float] = mapped_column(Float, default=0.0, index=True)
+    display_level: Mapped[str] = mapped_column(String(32), default="low", index=True)
+
+    post: Mapped[Post] = relationship(back_populates="projection")
+
+
+class DiscardedPost(Base):
+    __tablename__ = "discarded_posts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    upstream_post_id: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    source_id: Mapped[int | None] = mapped_column(ForeignKey("sources.id"), nullable=True, index=True)
+    title_hash: Mapped[str] = mapped_column(String(64), index=True)
+    discard_reason: Mapped[str] = mapped_column(String(64), index=True)
+    discard_stage: Mapped[str] = mapped_column(String(64), default="prescreen")
+    matched_rule_version: Mapped[str] = mapped_column(String(32), default="iter1-v1")
+    matched_fields: Mapped[str] = mapped_column(Text, default="")
+    matched_keywords: Mapped[str] = mapped_column(Text, default="")
+    quality_signals: Mapped[str] = mapped_column(Text, default="")
+    discarded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    source: Mapped[Source | None] = relationship(back_populates="discarded_posts")
 
 
 class SyncJob(TimestampMixin, Base):
@@ -79,9 +145,11 @@ class SyncJob(TimestampMixin, Base):
     trigger_type: Mapped[str] = mapped_column(String(32))
     status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
     sources_synced: Mapped[int] = mapped_column(Integer, default=0)
-    articles_fetched: Mapped[int] = mapped_column(Integer, default=0)
-    articles_inserted: Mapped[int] = mapped_column(Integer, default=0)
-    articles_updated: Mapped[int] = mapped_column(Integer, default=0)
+    posts_fetched: Mapped[int] = mapped_column(Integer, default=0)
+    posts_inserted: Mapped[int] = mapped_column(Integer, default=0)
+    posts_updated: Mapped[int] = mapped_column(Integer, default=0)
+    posts_discarded: Mapped[int] = mapped_column(Integer, default=0)
+    discard_stats_json: Mapped[str] = mapped_column(Text, default="{}")
     error_summary: Mapped[str] = mapped_column(Text, default="")
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -106,4 +174,3 @@ class SyncJobItem(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     sync_job: Mapped[SyncJob] = relationship(back_populates="items")
-
