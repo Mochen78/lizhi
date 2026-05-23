@@ -10,7 +10,9 @@ class PostItemResponse(BaseModel):
     source_id: int
     source_name: str
     title: str
+    llm_title: str
     summary: str
+    llm_summary: str
     original_url: str
     cover_url: str
     published_at: datetime | None

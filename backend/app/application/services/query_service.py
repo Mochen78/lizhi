@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from datetime import date, datetime, timedelta
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, joinedload
@@ -16,10 +17,10 @@ class QueryService:
         *,
         category: str = "",
         content_type: str = "",
-        participation_status: str = "",
-        time_status: str = "",
+        time_range: str = "",
         search: str = "",
         source_id: int | None = None,
+        sort: str = "deadline",
         offset: int = 0,
         limit: int = 20,
         show_all: bool = False,
@@ -45,13 +46,20 @@ class QueryService:
             statement = statement.where(PostProjection.content_type == content_type)
             count_statement = count_statement.where(PostProjection.content_type == content_type)
 
-        if participation_status:
-            statement = statement.where(PostProjection.participation_status == participation_status)
-            count_statement = count_statement.where(PostProjection.participation_status == participation_status)
-
-        if time_status:
-            statement = statement.where(PostProjection.time_status == time_status)
-            count_statement = count_statement.where(PostProjection.time_status == time_status)
+        if time_range:
+            today = date.today()
+            monday = today - timedelta(days=today.weekday())
+            ranges = {
+                "this_week": (monday, monday + timedelta(days=6)),
+                "this_weekend": (monday + timedelta(days=5), monday + timedelta(days=6)),
+                "next_week": (monday + timedelta(days=7), monday + timedelta(days=13)),
+            }
+            if time_range in ranges:
+                sd, ed = ranges[time_range]
+                start = datetime(sd.year, sd.month, sd.day)
+                end = datetime(ed.year, ed.month, ed.day, 23, 59, 59)
+                statement = statement.where(PostProjection.deadline_at >= start, PostProjection.deadline_at <= end)
+                count_statement = count_statement.where(PostProjection.deadline_at >= start, PostProjection.deadline_at <= end)
 
         if search:
             pattern = f"%{search}%"
@@ -67,11 +75,19 @@ class QueryService:
             statement = statement.where(Post.source_id == source_id)
             count_statement = count_statement.where(Post.source_id == source_id)
 
-        statement = statement.order_by(
-            PostProjection.ranking_score.desc(),
-            Post.published_at.desc().nullslast(),
-            Post.id.desc(),
-        ).offset(offset).limit(limit)
+        if sort == "deadline":
+            statement = statement.order_by(
+                PostProjection.deadline_at.asc().nullslast(),
+                Post.published_at.desc().nullslast(),
+                Post.id.desc(),
+            )
+        else:
+            statement = statement.order_by(
+                Post.published_at.desc().nullslast(),
+                PostProjection.deadline_at.asc().nullslast(),
+                Post.id.desc(),
+            )
+        statement = statement.offset(offset).limit(limit)
 
         items = db.execute(statement).scalars().unique().all()
         total = db.execute(count_statement).scalar_one()

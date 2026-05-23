@@ -93,3 +93,4 @@ class DiscardReason(StrEnum):
     TUTORIAL = "tutorial"
     RECORD_ONLY = "record_only"
     GARBLED_HIDDEN_SOURCE = "garbled_hidden_source"
+    NON_CAMPUS = "non_campus"

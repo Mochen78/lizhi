@@ -21,7 +21,7 @@ class Settings:
     port: int = 8002
     database_url: str = ""
     sync_interval_minutes: int = 10
-    post_fetch_limit: int = 50
+    post_fetch_limit: int = 500
     source_fetch_limit: int = 200
     enable_scheduler: bool = True
     upstream_base_url: str = ""
@@ -44,7 +44,7 @@ class Settings:
             port=int(os.getenv("BACKEND_PORT", "8002")),
             database_url=os.getenv("BACKEND_DATABASE_URL", f"sqlite:///{default_db_path.as_posix()}"),
             sync_interval_minutes=int(os.getenv("BACKEND_SYNC_INTERVAL_MINUTES", "10")),
-            post_fetch_limit=int(os.getenv("BACKEND_POST_FETCH_LIMIT", "50")),
+            post_fetch_limit=int(os.getenv("BACKEND_POST_FETCH_LIMIT", "500")),
             source_fetch_limit=int(os.getenv("BACKEND_SOURCE_FETCH_LIMIT", "200")),
             enable_scheduler=_as_bool(os.getenv("BACKEND_ENABLE_SCHEDULER"), True),
             upstream_base_url=os.getenv("BACKEND_UPSTREAM_BASE_URL", ""),

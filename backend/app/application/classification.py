@@ -28,6 +28,15 @@ CATEGORY_RULES: dict[str, list[str]] = {
     "notice": ["通知", "公告", "通告", "提醒", "须知", "安排"],
 }
 
+NON_SHENZHEN_LOCATIONS = [
+    "北京", "上海", "广州", "成都", "杭州", "武汉", "南京", "重庆", "西安",
+    "苏州", "天津", "长沙", "郑州", "东莞", "青岛", "沈阳", "宁波", "昆明",
+    "大连", "厦门", "福州", "无锡", "合肥", "济南", "佛山", "唐山", "温州",
+    "常州", "泉州", "南宁", "贵阳", "南昌", "长春", "石家庄", "太原", "哈尔滨",
+    "海口", "兰州", "呼和浩特", "乌鲁木齐", "拉萨", "银川", "西宁",
+    "珠海", "中山", "惠州",
+]
+
 ACTIONABLE_HINTS = [
     "报名",
     "申请",
@@ -92,6 +101,17 @@ EXCLUDE_RULES: dict[DiscardReason, dict[str, list[str]]] = {
 
 DIRECT_PREFIXES = ("恭喜", "祝贺", "喜报", "公示", "名单", "回顾", "教程", "指南", "介绍", "纪实")
 NON_ACTIONABLE_PENALTIES = {"回顾", "总结", "落幕", "闭幕", "公示", "名单", "恭喜", "喜报", "教程", "介绍", "记录"}
+
+NON_CAMPUS_SOURCE_KEYWORDS = [
+    "相亲", "婚恋", "交友", "恋爱", "脱单", "征婚",
+    "房产", "二手房", "租房", "楼盘", "房贷",
+    "代购", "微商", "优惠券", "返利", "砍价",
+    "按摩", "足浴", "SPA", "美容院",
+]
+NON_CAMPUS_CONTENT_KEYWORDS = [
+    "相亲大会", "单身派对", "脱单活动", "交友派对",
+    "楼盘开盘", "购房优惠", "房产投资",
+]
 PARTICIPABLE_HINTS = ["报名", "申请", "招募", "投递", "参加", "参赛", "征集", "公开招募", "开放申请", "提交材料"]
 
 TIME_PATTERNS = [
@@ -105,7 +125,7 @@ DATE_RANGE_PATTERN = re.compile(
 DEADLINE_HINTS = ["截止", "报名截止", "申请截止", "投递截止", "截止时间"]
 START_HINTS = ["开始", "活动时间", "活动将于", "举办时间", "时间为"]
 END_HINTS = ["结束", "截至", "持续至", "截止至"]
-SANITIZE_TAGS = ("script", "style", "iframe", "object", "embed", "link", "meta")
+SANITIZE_TAGS = ("script", "style", "iframe", "object", "embed", "link", "meta", "img")
 
 
 @dataclass(slots=True)
@@ -201,6 +221,19 @@ def prescreen_post(*, title: str, summary: str = "", source_name: str = "", body
     summary_text = normalize_whitespace(summary)
     body_text = normalize_whitespace(body_excerpt)
 
+    source_lc = normalize_whitespace(source_name).lower()
+    combined_lc = f"{title_text} {summary_text}".lower()
+    non_campus_source_kw = _contains_any(source_lc, NON_CAMPUS_SOURCE_KEYWORDS)
+    non_campus_content_kw = _contains_any(combined_lc, NON_CAMPUS_CONTENT_KEYWORDS)
+    if non_campus_source_kw or non_campus_content_kw:
+        return PrescreenDecision(
+            True,
+            DiscardReason.NON_CAMPUS.value,
+            non_campus_source_kw + non_campus_content_kw,
+            ["source_name"] if non_campus_source_kw else ["title", "summary"],
+            None,
+        )
+
     title_garbled, title_signals = _is_garbled_text(title_text)
     source_garbled, source_signals = _is_garbled_text(source_name)
     summary_garbled, summary_signals = _is_garbled_text(summary_text)
@@ -256,13 +289,19 @@ def prescreen_post(*, title: str, summary: str = "", source_name: str = "", body
 
 
 def classify_categories(title: str, summary: str = "", content: str = "") -> list[str]:
-    text = normalize_whitespace(f"{title} {summary} {content}").lower()
+    text = normalize_whitespace(f"{title} {summary}").lower()
     matched = [category for category, keywords in CATEGORY_RULES.items() if _contains_any(text, keywords)]
+    if "club_activity" in matched and _is_off_campus_activity(text):
+        matched = [c for c in matched if c != "club_activity"]
     return matched or ["other"]
 
 
+def _is_off_campus_activity(text: str) -> bool:
+    return any(loc in text for loc in NON_SHENZHEN_LOCATIONS)
+
+
 def classify_content_type(title: str, summary: str = "", content: str = "") -> ContentType:
-    text = normalize_whitespace(f"{title} {summary} {content}").lower()
+    text = normalize_whitespace(f"{title} {summary}").lower()
     if _contains_any(text, list(NON_ACTIONABLE_PENALTIES)):
         return ContentType.NON_ACTIONABLE
     if _contains_any(text, ACTIONABLE_HINTS):
@@ -457,16 +496,70 @@ def build_summary(*, title: str, upstream_summary: str, llm_summary: str, conten
     return summary[:140]
 
 
+VALID_CATEGORIES = {"club_activity", "lecture", "volunteer", "competition", "exam", "recruitment", "notice"}
+ISO_DATETIME_RE = re.compile(r"^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2})?)?$")
+
+
+def _validate_llm_output(raw: dict) -> dict:
+    result = {}
+
+    title = str(raw.get("title") or "").strip()
+    if title and len(title) <= 40:
+        result["title"] = title
+
+    summary = str(raw.get("summary") or "").strip()
+    result["summary"] = summary[:200] if summary else ""
+
+    category = str(raw.get("category") or "").strip()
+    result["category"] = category if category in VALID_CATEGORIES else ""
+
+    for field in ("is_opportunity", "is_recap"):
+        val = raw.get(field)
+        if isinstance(val, bool):
+            result[field] = val
+        elif isinstance(val, str):
+            result[field] = val.lower() in ("true", "yes", "1")
+
+    for field in ("event_type", "audience", "call_to_action", "deadline_text", "start_time_text", "end_time_text", "key_evidence"):
+        val = str(raw.get(field) or "").strip()
+        if val:
+            result[field] = val
+
+    for iso_field in ("deadline_iso", "start_iso", "end_iso"):
+        val = str(raw.get(iso_field) or "").strip()
+        if val and val.lower() not in ("null", "none", "n/a", ""):
+            if ISO_DATETIME_RE.match(val):
+                result[iso_field] = val
+
+    return result
+
+
 def parse_llm_payload(payload: str) -> dict:
     if not payload:
         return {}
     try:
-        return json.loads(payload)
+        raw = json.loads(payload)
     except json.JSONDecodeError:
         match = re.search(r"\{.*\}", payload, flags=re.DOTALL)
         if not match:
             return {}
         try:
-            return json.loads(match.group(0))
+            raw = json.loads(match.group(0))
         except json.JSONDecodeError:
             return {}
+    if not isinstance(raw, dict):
+        return {}
+    return _validate_llm_output(raw)
+
+
+def parse_iso_datetime(value: str, published_at: datetime | None) -> datetime | None:
+    if not value:
+        return None
+    for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+        try:
+            dt = datetime.strptime(value[:19] if len(value) >= 19 else value, fmt)
+            tz = published_at.tzinfo if published_at and published_at.tzinfo else None
+            return dt.replace(tzinfo=tz)
+        except (ValueError, IndexError):
+            continue
+    return None

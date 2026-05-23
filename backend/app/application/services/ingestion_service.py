@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.application.classification import (
     PRESCREEN_RULE_VERSION,
+    TimeSignals,
     build_summary,
     classify_categories,
     classify_content_type,
@@ -23,8 +24,11 @@ from app.application.classification import (
     extract_time_signals,
     html_to_text,
     normalize_whitespace,
+    parse_iso_datetime,
+    parse_llm_payload,
     prescreen_post,
     sanitize_html,
+    VALID_CATEGORIES,
 )
 from app.application.services.llm_service import LlmService
 from app.db.models import DiscardedPost, Post, PostCategory, PostProjection, RawPayload, Source, SyncJob, SyncJobItem
@@ -39,6 +43,17 @@ from app.domain.enums import (
 )
 
 _logger = logging.getLogger(__name__)
+
+
+def _parse_llm_datetimes(llm_json_str: str, published_at: datetime | None) -> tuple:
+    structured = parse_llm_payload(llm_json_str)
+    if not structured:
+        return None, None, None
+    return (
+        parse_iso_datetime(structured.get("start_iso"), published_at),
+        parse_iso_datetime(structured.get("end_iso"), published_at),
+        parse_iso_datetime(structured.get("deadline_iso"), published_at),
+    )
 
 
 class IngestionService:
@@ -422,8 +437,22 @@ class IngestionService:
         content_type = classify_content_type(post.title, post.summary, post.content_text_snapshot)
         categories = [category.category_code for category in post.categories] or ["other"]
         primary_category = categories[0]
+
+        # Prefer LLM category over rule-based if valid
+        llm_structured = parse_llm_payload(post.llm_structured_json or "")
+        if llm_structured and llm_structured.get("category"):
+            llm_cat = llm_structured["category"]
+            if llm_cat in VALID_CATEGORIES:
+                primary_category = llm_cat
         time_signals = extract_time_signals(post.title, post.summary, post.content_text_snapshot, post.published_at)
-        time_status, timeliness_level = derive_time_status(time_signals)
+
+        llm_start, llm_end, llm_deadline = _parse_llm_datetimes(post.llm_structured_json, post.published_at)
+        event_start = time_signals.event_start_at or llm_start
+        event_end = time_signals.event_end_at or llm_end
+        deadline = time_signals.deadline_at or llm_deadline
+        time_signals_merged = TimeSignals(event_start_at=event_start, event_end_at=event_end, deadline_at=deadline)
+
+        time_status, timeliness_level = derive_time_status(time_signals_merged)
         participation_status = derive_participation_status(
             content_type=content_type,
             time_status=time_status,
@@ -435,16 +464,16 @@ class IngestionService:
             content_type=content_type,
             primary_category=primary_category,
             time_status=time_status,
-            deadline_at=time_signals.deadline_at,
+            deadline_at=deadline,
             published_at=post.published_at,
         )
 
         projection = post.projection or PostProjection(post_id=post.id)
         projection.primary_category = primary_category
         projection.content_type = content_type.value
-        projection.event_start_at = time_signals.event_start_at
-        projection.event_end_at = time_signals.event_end_at
-        projection.deadline_at = time_signals.deadline_at
+        projection.event_start_at = event_start
+        projection.event_end_at = event_end
+        projection.deadline_at = deadline
         projection.time_status = time_status.value
         projection.timeliness_level = timeliness_level.value
         projection.participation_status = participation_status.value

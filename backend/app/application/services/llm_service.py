@@ -35,9 +35,25 @@ class LlmService:
 
         prompt = (
             "你是校园机会内容抽取助手。"
-            "请只输出 JSON，对以下文章生成用于列表浏览的简短摘要，并抽取候选结构化字段。"
+            "请只输出 JSON，对以下文章生成简短标题和摘要，并抽取候选结构化字段。"
             "不要做最终业务判断，不要输出解释。"
-            'JSON 字段固定为: summary,is_opportunity,is_recap,event_type,audience,call_to_action,deadline_text,start_time_text,end_time_text,key_evidence。'
+            'JSON 字段固定为: title,summary,category,is_opportunity,is_recap,event_type,audience,call_to_action,'
+            "deadline_text,start_time_text,end_time_text,key_evidence,"
+            "deadline_iso,start_iso,end_iso。"
+            "title 字段必须：20字以内，突出活动核心信息（做什么+关键限定），去掉组织方前缀和宣传语气词，"
+            "使用简洁直白的表达，不要用引号、括号或特殊符号。"
+            "category 字段必须从以下选项中选择一个最匹配的："
+            "club_activity（校园活动/社团/文化/晚会/工作坊），"
+            "lecture（讲座/论坛/报告/宣讲/学术分享），"
+            "volunteer（志愿服务/公益/义工），"
+            "competition（竞赛/比赛/大赛/征集），"
+            "exam（考试/考核/报名/选课），"
+            "recruitment（招聘/招募/实习/纳新），"
+            "notice（通知/公告/提醒/须知）。"
+            "如果无法判断类别，填 notice。"
+            "summary 字段控制在200字以内，只提取关键信息（活动内容、时间、地点、参与方式），不要复述原文。"
+            "deadline_iso/start_iso/end_iso 为 ISO 8601 日期时间字符串（如 2025-06-15T14:00:00），"
+            "无法识别则填 null。"
         )
         user_input = json.dumps(
             {

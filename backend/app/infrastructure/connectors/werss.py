@@ -69,12 +69,21 @@ class WerssConnector:
         return all_items[:limit]
 
     async def fetch_posts(self, source_id: str, limit: int) -> list[dict]:
-        response = await self._request(
-            "GET",
-            "/api/v1/wx/articles",
-            params={"offset": 0, "limit": limit, "search": "", "mp_id": source_id},
-        )
-        return response.json().get("data", {}).get("list", [])
+        all_items: list[dict] = []
+        offset = 0
+        while len(all_items) < limit:
+            batch_limit = min(50, limit - len(all_items))
+            response = await self._request(
+                "GET",
+                "/api/v1/wx/articles",
+                params={"offset": offset, "limit": batch_limit, "search": "", "mp_id": source_id},
+            )
+            items = response.json().get("data", {}).get("list", [])
+            if not items:
+                break
+            all_items.extend(items)
+            offset += len(items)
+        return all_items[:limit]
 
     async def fetch_post_detail(self, post_id: str) -> dict | None:
         response = await self._request(

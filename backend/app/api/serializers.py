@@ -12,6 +12,18 @@ from app.schemas.responses import (
 )
 
 
+def _extract_llm_title(post: Post) -> str:
+    if post.llm_structured_json:
+        try:
+            structured = json.loads(post.llm_structured_json)
+            title = structured.get("title", "")
+            if title:
+                return title
+        except (json.JSONDecodeError, TypeError):
+            pass
+    return post.title
+
+
 def serialize_post(post: Post) -> PostItemResponse:
     projection = post.projection
     return PostItemResponse(
@@ -19,7 +31,9 @@ def serialize_post(post: Post) -> PostItemResponse:
         source_id=post.source_id,
         source_name=post.source_name_snapshot,
         title=post.title,
+        llm_title=_extract_llm_title(post),
         summary=post.summary,
+        llm_summary=post.llm_summary or "",
         original_url=post.original_url,
         cover_url=post.cover_url,
         published_at=post.published_at,

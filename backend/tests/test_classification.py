@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 from app.application.classification import (
+    _validate_llm_output,
     classify_categories,
     classify_content_type,
     compute_ranking_score,
@@ -10,6 +11,7 @@ from app.application.classification import (
     derive_participation_status,
     derive_time_status,
     extract_time_signals,
+    parse_iso_datetime,
     prescreen_post,
 )
 from app.domain.enums import ContentType, ParticipationStatus, TimeStatus, TimelinessLevel
@@ -101,3 +103,110 @@ def test_compute_ranking_score_rewards_near_deadline():
         now=now,
     )
     assert score >= 170
+
+
+# --- LLM output validation tests ---
+
+def test_validate_llm_output_happy_path():
+    raw = {
+        "title": "英语写作大赛报名",
+        "summary": "第四届英文写作大赛正在报名中，截止5月29日。",
+        "category": "competition",
+        "is_opportunity": True,
+        "is_recap": False,
+        "event_type": "竞赛",
+        "audience": "全体在校生",
+        "call_to_action": "立即报名",
+        "deadline_text": "5月29日中午12点",
+        "start_time_text": "",
+        "end_time_text": "",
+        "key_evidence": "",
+        "deadline_iso": "2026-05-29T12:00:00",
+        "start_iso": None,
+        "end_iso": None,
+    }
+    result = _validate_llm_output(raw)
+    assert result["title"] == "英语写作大赛报名"
+    assert result["category"] == "competition"
+    assert result["deadline_iso"] == "2026-05-29T12:00:00"
+    assert "start_iso" not in result
+
+
+def test_validate_llm_output_rejects_oversized_title():
+    raw = {"title": "A" * 50, "summary": "ok", "category": "notice"}
+    result = _validate_llm_output(raw)
+    assert "title" not in result
+
+
+def test_validate_llm_output_rejects_invalid_category():
+    raw = {"title": "ok", "summary": "ok", "category": "party"}
+    result = _validate_llm_output(raw)
+    assert result["category"] == ""
+
+
+def test_validate_llm_output_rejects_bad_iso():
+    raw = {"title": "ok", "summary": "ok", "deadline_iso": "not-a-date"}
+    result = _validate_llm_output(raw)
+    assert "deadline_iso" not in result
+
+
+def test_validate_llm_output_rejects_null_strings():
+    raw = {"title": "ok", "summary": "ok", "start_iso": "null", "end_iso": "None"}
+    result = _validate_llm_output(raw)
+    assert "start_iso" not in result
+    assert "end_iso" not in result
+
+
+def test_validate_llm_output_truncates_long_summary():
+    raw = {"title": "ok", "summary": "x" * 500, "category": "notice"}
+    result = _validate_llm_output(raw)
+    assert len(result["summary"]) <= 200
+
+
+# --- Non-campus content filtering tests ---
+
+def test_prescreen_blocks_non_campus_source():
+    result = prescreen_post(
+        title="深圳周末相亲活动",
+        summary="优质单身青年交友活动",
+        source_name="深圳恋爱相亲",
+    )
+    assert result.discard is True
+    assert result.reason == "non_campus"
+
+
+def test_prescreen_blocks_non_campus_content():
+    result = prescreen_post(
+        title="单身派对交友大会",
+        summary="脱单活动等你来",
+        source_name="深圳大学社团",
+    )
+    assert result.discard is True
+    assert result.reason == "non_campus"
+
+
+def test_prescreen_allows_campus_content():
+    result = prescreen_post(
+        title="深圳大学数学竞赛报名",
+        summary="数学竞赛面向全校学生",
+        source_name="深圳大学教务部",
+    )
+    assert result.discard is False
+
+
+# --- parse_iso_datetime tests ---
+
+def test_parse_iso_datetime_full():
+    dt = parse_iso_datetime("2026-05-29T12:00:00", None)
+    assert dt is not None
+    assert dt.year == 2026 and dt.month == 5 and dt.day == 29
+
+def test_parse_iso_datetime_date_only():
+    dt = parse_iso_datetime("2026-06-15", None)
+    assert dt is not None
+    assert dt.month == 6
+
+def test_parse_iso_datetime_invalid():
+    assert parse_iso_datetime("not-a-date", None) is None
+    assert parse_iso_datetime("", None) is None
+    assert parse_iso_datetime(None, None) is None
