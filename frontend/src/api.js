@@ -1,6 +1,6 @@
 import axios from 'axios'
 
-const api = axios.create({ baseURL: '/api' })
+const api = axios.create({ baseURL: '/api', timeout: 15000 })
 
 export const getPosts = (params) =>
   api.get('/posts', { params }).then((r) => r.data)
@@ -15,3 +15,9 @@ export const getSources = () =>
   api.get('/sources').then((r) => r.data)
 
 export const syncNow = () => api.post('/sync').then((r) => r.data)
+
+export const getSupport = (clientId) =>
+  api.get('/support', { params: { client_id: clientId } }).then((r) => r.data)
+
+export const addSupport = (clientId) =>
+  api.post('/support', { client_id: clientId }).then((r) => r.data)

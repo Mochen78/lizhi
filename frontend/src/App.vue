@@ -41,22 +41,17 @@
           <div class="brand-icon">
             <svg viewBox="0 0 100 100" width="38" height="38">
               <defs>
-                <radialGradient id="lcGrad" cx="40%" cy="35%" r="55%">
-                  <stop offset="0%" stop-color="#ff6b6b"/>
-                  <stop offset="70%" stop-color="#c0392b"/>
-                  <stop offset="100%" stop-color="#922b21"/>
+                <radialGradient id="lcGrad" cx="36%" cy="28%" r="70%">
+                  <stop offset="0%" stop-color="#ff817d"/>
+                  <stop offset="58%" stop-color="#d9443f"/>
+                  <stop offset="100%" stop-color="#951f2b"/>
                 </radialGradient>
               </defs>
-              <circle cx="50" cy="54" r="34" fill="url(#lcGrad)"/>
-              <g fill="#922b21" opacity="0.4">
-                <circle cx="34" cy="38" r="4"/><circle cx="52" cy="32" r="3.5"/>
-                <circle cx="68" cy="42" r="4"/><circle cx="65" cy="62" r="3.5"/>
-                <circle cx="38" cy="68" r="4"/><circle cx="28" cy="54" r="3.5"/>
-                <circle cx="50" cy="46" r="3"/><circle cx="42" cy="56" r="3"/>
-              </g>
-              <ellipse cx="44" cy="18" rx="6" ry="10" fill="#27ae60" transform="rotate(-15,44,18)"/>
-              <ellipse cx="56" cy="16" rx="5" ry="9" fill="#2ecc71" transform="rotate(10,56,16)"/>
-              <path d="M50 20 Q50 10 50 5" stroke="#1e8449" stroke-width="2" fill="none" stroke-linecap="round"/>
+              <path d="M73 41c6 5 6 14 2 20 0 8-5 14-13 16-4 7-13 8-20 5-7 3-15-1-19-8-7-3-11-10-9-18-4-7-2-15 5-20 2-8 9-13 17-12 6-5 14-5 20 0 8 0 15 5 17 13Z" fill="url(#lcGrad)"/>
+              <ellipse cx="35" cy="38" rx="7" ry="10" fill="#fff" opacity="0.16" transform="rotate(24 35 38)"/>
+              <path d="M50 25c-1-9 0-16 2-23" stroke="#2f7d4e" stroke-width="4" fill="none" stroke-linecap="round"/>
+              <path d="M50 13c-8-7-17-8-25-4 6 6 15 8 25 4Z" fill="#4a9a61"/>
+              <path d="M52 14c7-8 16-11 24-8-5 6-14 9-24 8Z" fill="#2f7d4e"/>
             </svg>
           </div>
           <div>
@@ -86,23 +81,94 @@
 
     <main class="page">
       <section class="toolbar card">
-        <div class="toolbar-grid">
-          <input v-model="draftSearch" @keyup.enter="applyFilters" :placeholder="t.searchPlaceholder" />
-          <select v-model="filters.category" @change="applyFilters">
-            <option value="">{{ t.allCategories }}</option>
-            <option v-for="item in categoryOptions" :key="item.value" :value="item.value">
-              {{ item.label }}
-            </option>
-          </select>
-          <div class="sort-toggle">
-            <button :class="{ active: filters.sort === 'deadline' }" @click="setSort('deadline')">{{ t.sortByDeadline }}</button>
-            <button :class="{ active: filters.sort === 'published' }" @click="setSort('published')">{{ t.sortByPublished }}</button>
+        <div class="filter-panel">
+          <div class="search-row">
+            <input v-model="draftSearch" @keyup.enter="applyFilters" :placeholder="t.searchPlaceholder" />
+            <button class="search-action" @click="applyFilters">搜索</button>
+            <section class="support-widget" aria-label="荔枝支持">
+              <div class="support-copy">
+                <strong>{{ t.supportTitle }}</strong>
+                <span>{{ t.supportHint }}</span>
+              </div>
+              <div class="support-action">
+                <button
+                  class="support-lychee-button"
+                  :class="{ liked: supportLiked, popping: supportPulse }"
+                  :disabled="supportLiked || supportBusy"
+                  :aria-pressed="supportLiked"
+                  :title="supportLiked ? t.supported : t.supportHint"
+                  @click="supportProject"
+                >
+                  <svg viewBox="0 0 100 100" width="42" height="42" aria-hidden="true">
+                    <defs>
+                      <radialGradient id="supportLcGrad" cx="34%" cy="28%" r="72%">
+                        <stop offset="0%" :stop-color="supportLiked ? '#ff8a85' : '#f7c7c4'"/>
+                        <stop offset="58%" :stop-color="supportLiked ? '#dc4642' : '#d99a96'"/>
+                        <stop offset="100%" :stop-color="supportLiked ? '#982433' : '#b87d7a'"/>
+                      </radialGradient>
+                    </defs>
+                    <path d="M73 41c6 5 6 14 2 20 0 8-5 14-13 16-4 7-13 8-20 5-7 3-15-1-19-8-7-3-11-10-9-18-4-7-2-15 5-20 2-8 9-13 17-12 6-5 14-5 20 0 8 0 15 5 17 13Z" fill="url(#supportLcGrad)"/>
+                    <ellipse cx="35" cy="38" rx="7" ry="10" fill="#fff" opacity="0.18" transform="rotate(24 35 38)"/>
+                    <path d="M50 25c-1-9 0-16 2-23" stroke="#2f7d4e" stroke-width="4" fill="none" stroke-linecap="round"/>
+                    <path d="M50 13c-8-7-17-8-25-4 6 6 15 8 25 4Z" fill="#4a9a61"/>
+                    <path d="M52 14c7-8 16-11 24-8-5 6-14 9-24 8Z" fill="#2f7d4e"/>
+                  </svg>
+                </button>
+                <div class="support-basket" aria-live="polite">
+                  <svg viewBox="0 0 92 68" width="72" height="54" aria-hidden="true">
+                    <defs>
+                      <radialGradient id="basketLycheeGrad" cx="36%" cy="28%" r="72%">
+                        <stop offset="0%" stop-color="#ff8a85"/>
+                        <stop offset="62%" stop-color="#dc4642"/>
+                        <stop offset="100%" stop-color="#982433"/>
+                      </radialGradient>
+                    </defs>
+                    <g class="basket-lychees">
+                      <circle cx="31" cy="25" r="10" fill="url(#basketLycheeGrad)"/>
+                      <circle cx="46" cy="21" r="11" fill="url(#basketLycheeGrad)"/>
+                      <circle cx="61" cy="26" r="10" fill="url(#basketLycheeGrad)"/>
+                      <circle cx="39" cy="34" r="10" fill="url(#basketLycheeGrad)"/>
+                      <circle cx="54" cy="35" r="9" fill="url(#basketLycheeGrad)"/>
+                      <path d="M43 14c-2-5 1-9 5-11" stroke="#2f7d4e" stroke-width="3" fill="none" stroke-linecap="round"/>
+                      <path d="M48 7c5-4 11-4 16-1-4 4-9 5-16 1Z" fill="#4a9a61"/>
+                    </g>
+                    <path d="M18 29h56l-7 31H25L18 29Z" fill="#c88a4b"/>
+                    <path d="M23 30c6 9 40 9 46 0" fill="none" stroke="#8b5a2b" stroke-width="4" stroke-linecap="round"/>
+                    <path d="M30 29c4-17 28-17 32 0" fill="none" stroke="#8b5a2b" stroke-width="5" stroke-linecap="round"/>
+                    <path d="M28 39h36M27 49h38" stroke="#a36c34" stroke-width="2.5" stroke-linecap="round"/>
+                  </svg>
+                  <span class="support-count">{{ supportCount }}</span>
+                  <span v-if="supportFloatKey" :key="supportFloatKey" class="support-plus-one">+1</span>
+                </div>
+              </div>
+            </section>
           </div>
-          <div class="time-range-toggle">
-            <button :class="{ active: filters.time_range === '' }" @click="setTimeRange('')">{{ t.allTime }}</button>
-            <button :class="{ active: filters.time_range === 'this_week' }" @click="setTimeRange('this_week')">{{ t.thisWeek }}</button>
-            <button :class="{ active: filters.time_range === 'this_weekend' }" @click="setTimeRange('this_weekend')">{{ t.thisWeekend }}</button>
-            <button :class="{ active: filters.time_range === 'next_week' }" @click="setTimeRange('next_week')">{{ t.nextWeek }}</button>
+          <div class="chip-row">
+            <button class="filter-chip" :class="{ active: filters.category === '' }" @click="setCategory('')">{{ t.allCategories }}</button>
+            <button
+              v-for="item in categoryOptions"
+              :key="item.value"
+              class="filter-chip"
+              :class="{ active: filters.category === item.value }"
+              @click="setCategory(item.value)"
+            >
+              {{ item.label }}
+            </button>
+          </div>
+          <div class="chip-row compact">
+            <button class="filter-chip" :class="{ active: filters.time_range === '' }" @click="setTimeRange('')">{{ t.allTime }}</button>
+            <button class="filter-chip" :class="{ active: filters.time_range === 'this_week' }" @click="setTimeRange('this_week')">{{ t.thisWeek }}</button>
+            <button class="filter-chip" :class="{ active: filters.time_range === 'this_weekend' }" @click="setTimeRange('this_weekend')">{{ t.thisWeekend }}</button>
+            <button class="filter-chip" :class="{ active: filters.time_range === 'next_week' }" @click="setTimeRange('next_week')">{{ t.nextWeek }}</button>
+            <span class="chip-divider"></span>
+            <button class="filter-chip" :class="{ active: filters.sort === 'deadline' }" @click="setSort('deadline')">{{ t.sortByDeadline }}</button>
+            <button class="filter-chip" :class="{ active: filters.sort === 'published' }" @click="setSort('published')">{{ t.sortByPublished }}</button>
+          </div>
+          <div class="active-filter-row" v-if="activeFilterChips.length">
+            <button v-for="chip in activeFilterChips" :key="chip.key" class="active-filter-chip" @click="removeFilterChip(chip.key)">
+              {{ chip.label }} <span>×</span>
+            </button>
+            <button class="clear-filter-chip" @click="clearAllFilters">清空筛选</button>
           </div>
         </div>
       </section>
@@ -117,19 +183,21 @@
           <div v-if="errorMessage" class="card state error">{{ errorMessage }}</div>
           <div v-else-if="loading" class="card state loading-state">
             <div class="lychee-loader">
-              <svg viewBox="0 0 60 60" width="48" height="48">
-                <circle cx="30" cy="30" r="24" fill="#c0392b" class="lychee-body"/>
-                <circle cx="30" cy="30" r="22" fill="#e74c3c"/>
-                <g class="lychee-bumps">
-                  <circle cx="20" cy="18" r="3" fill="#c0392b" opacity="0.5"/>
-                  <circle cx="35" cy="15" r="2.5" fill="#c0392b" opacity="0.5"/>
-                  <circle cx="42" cy="24" r="3" fill="#c0392b" opacity="0.5"/>
-                  <circle cx="40" cy="38" r="2.5" fill="#c0392b" opacity="0.5"/>
-                  <circle cx="25" cy="42" r="3" fill="#c0392b" opacity="0.5"/>
-                  <circle cx="15" cy="32" r="2.5" fill="#c0392b" opacity="0.5"/>
+              <svg viewBox="0 0 100 100" width="54" height="54" class="lychee-spin-loader">
+                <defs>
+                  <radialGradient id="loaderLcGrad" cx="36%" cy="28%" r="70%">
+                    <stop offset="0%" stop-color="#ff817d"/>
+                    <stop offset="58%" stop-color="#d9443f"/>
+                    <stop offset="100%" stop-color="#951f2b"/>
+                  </radialGradient>
+                </defs>
+                <g class="lychee-spinner">
+                  <path d="M73 41c6 5 6 14 2 20 0 8-5 14-13 16-4 7-13 8-20 5-7 3-15-1-19-8-7-3-11-10-9-18-4-7-2-15 5-20 2-8 9-13 17-12 6-5 14-5 20 0 8 0 15 5 17 13Z" fill="url(#loaderLcGrad)"/>
+                  <ellipse cx="35" cy="38" rx="7" ry="10" fill="#fff" opacity="0.16" transform="rotate(24 35 38)"/>
+                  <path d="M50 25c-1-9 0-16 2-23" stroke="#2f7d4e" stroke-width="4" fill="none" stroke-linecap="round"/>
+                  <path d="M50 13c-8-7-17-8-25-4 6 6 15 8 25 4Z" fill="#4a9a61"/>
+                  <path d="M52 14c7-8 16-11 24-8-5 6-14 9-24 8Z" fill="#2f7d4e"/>
                 </g>
-                <ellipse cx="30" cy="10" rx="4" ry="6" fill="#27ae60" class="lychee-leaf"/>
-                <path d="M30 10 L30 4" stroke="#27ae60" stroke-width="1.5" stroke-linecap="round" class="lychee-stem"/>
               </svg>
               <span class="loading-text">{{ t.loading }}</span>
             </div>
@@ -152,7 +220,9 @@
             <h3>{{ post.llm_title || post.title }}</h3>
             <p class="summary">{{ post.llm_summary || post.summary }}</p>
             <div class="post-bottom" v-if="post.deadline_at || post.source_name">
-              <span class="deadline-tag" v-if="post.deadline_at">{{ t.deadline }} {{ formatDate(post.deadline_at) }}</span>
+              <span class="deadline-tag" v-if="post.deadline_at" :class="'deadline-' + deadlineTone(post.deadline_at)">
+                {{ deadlineLabel(post.deadline_at) }} · {{ t.deadline }} {{ formatDate(post.deadline_at) }}
+              </span>
               <span class="source-tag">{{ post.source_name }}</span>
             </div>
             <div class="post-expand" v-if="expandedId === post.id">
@@ -175,6 +245,13 @@
     </main>
 
     <footer class="app-footer">
+      <section class="sync-summary" v-if="lastSyncJob">
+        <div class="sync-summary-title">同步结果</div>
+        <div class="sync-metric"><strong>{{ syncMetrics.fetched }}</strong><span>抓取</span></div>
+        <div class="sync-metric"><strong>{{ syncMetrics.valid }}</strong><span>有效</span></div>
+        <div class="sync-metric"><strong>{{ syncMetrics.deduped }}</strong><span>去重</span></div>
+        <div class="sync-metric filtered"><strong>{{ syncMetrics.filtered }}</strong><span>过滤宣传稿</span></div>
+      </section>
       <div class="footer-brand">{{ t.appName }} · {{ t.tagline }}</div>
       <div class="footer-team">{{ t.devTeam }}</div>
     </footer>
@@ -183,7 +260,7 @@
 
 <script>
 import { computed, onMounted, ref } from 'vue'
-import { getPostCategories, getPosts, syncNow } from './api.js'
+import { addSupport, getPostCategories, getPosts, getSupport, syncNow } from './api.js'
 
 const I18N = {
   zh: {
@@ -198,7 +275,10 @@ const I18N = {
     deadlineTime: '截止时间', notRecognized: '未识别', viewOriginal: '查看原文',
     selectHint: '从左侧选择一条机会内容，这里会显示详情。',
     darkMode: '切换夜间模式', switchLang: 'Switch to English',
-    devTeam: '哈基米南北绿豆',
+    devTeam: '开发团队：哈基米',
+    supportTitle: '给荔知加颗荔枝',
+    supportHint: '喜欢点一下支持！',
+    supported: '已经支持过啦',
     guideTitle: '使用指南', guideSkip: '跳过', guideNext: '下一步', guideDone: '开始使用',
     club_activity: '校园活动', lecture: '讲座论坛', volunteer: '志愿公益',
     competition: '竞赛征集', exam: '考试考核', recruitment: '招聘招募', notice: '通知公告', other: '其他',
@@ -215,7 +295,10 @@ const I18N = {
     deadlineTime: 'Deadline', notRecognized: 'N/A', viewOriginal: 'View Original',
     selectHint: 'Select an item from the list to view details.',
     darkMode: 'Toggle Dark Mode', switchLang: '切换中文',
-    devTeam: 'Hajimi Nanbei Lvdou',
+    devTeam: 'Dev Team: Hajimi',
+    supportTitle: 'Add a lychee',
+    supportHint: 'Tap once if you like it.',
+    supported: 'Already supported',
     guideTitle: 'Quick Guide', guideSkip: 'Skip', guideNext: 'Next', guideDone: 'Get Started',
     club_activity: 'Activity', lecture: 'Lecture', volunteer: 'Volunteer',
     competition: 'Competition', exam: 'Exam', recruitment: 'Recruitment', notice: 'Notice', other: 'Other',
@@ -223,6 +306,17 @@ const I18N = {
 }
 
 const CATEGORY_KEYS = ['club_activity', 'lecture', 'volunteer', 'competition', 'exam', 'recruitment', 'notice', 'other']
+const SUPPORT_CLIENT_KEY = 'lizhi-support-client-id'
+const SUPPORT_LIKED_KEY = 'lizhi-support-liked'
+
+function getSupportClientId() {
+  let clientId = localStorage.getItem(SUPPORT_CLIENT_KEY)
+  if (!clientId) {
+    clientId = globalThis.crypto?.randomUUID?.() || `lizhi-${Date.now()}-${Math.random().toString(16).slice(2)}`
+    localStorage.setItem(SUPPORT_CLIENT_KEY, clientId)
+  }
+  return clientId
+}
 
 export default {
   name: 'App',
@@ -240,6 +334,11 @@ export default {
     const offset = ref(0)
     const lastSyncJob = ref(null)
     const filters = ref({ category: '', time_range: '', sort: 'deadline' })
+    const supportCount = ref(0)
+    const supportLiked = ref(localStorage.getItem(SUPPORT_LIKED_KEY) === '1')
+    const supportBusy = ref(false)
+    const supportPulse = ref(false)
+    const supportFloatKey = ref(0)
 
     const lang = ref(localStorage.getItem('lizhi-lang') || 'zh')
     const darkMode = ref(localStorage.getItem('lizhi-dark') === 'true')
@@ -266,12 +365,43 @@ export default {
     const categoryOptions = computed(() =>
       CATEGORY_KEYS.map(key => ({ value: key, label: t.value[key] || key })),
     )
+    const timeRangeOptions = computed(() => ({
+      this_week: t.value.thisWeek,
+      this_weekend: t.value.thisWeekend,
+      next_week: t.value.nextWeek,
+    }))
+    const syncMetrics = computed(() => {
+      if (!lastSyncJob.value) return { fetched: 0, valid: 0, deduped: 0, filtered: 0 }
+      const fetched = Number(lastSyncJob.value.posts_fetched || 0)
+      const inserted = Number(lastSyncJob.value.posts_inserted || 0)
+      const updated = Number(lastSyncJob.value.posts_updated || 0)
+      const filtered = Number(lastSyncJob.value.posts_discarded || lastSyncJob.value.discarded_count || 0)
+      return {
+        fetched,
+        valid: inserted + updated,
+        deduped: Math.max(fetched - inserted - updated - filtered, 0),
+        filtered,
+      }
+    })
+    const activeFilterChips = computed(() => {
+      const chips = []
+      if (activeSearch.value) chips.push({ key: 'search', label: activeSearch.value })
+      if (filters.value.category) chips.push({ key: 'category', label: categoryLabel(filters.value.category) })
+      if (filters.value.time_range) chips.push({ key: 'time_range', label: timeRangeOptions.value[filters.value.time_range] || filters.value.time_range })
+      if (filters.value.sort && filters.value.sort !== 'deadline') chips.push({ key: 'sort', label: t.value.sortByPublished })
+      return chips
+    })
 
     function categoryLabel(key) { return t.value[key] || key || '' }
+    function setCategory(category) {
+      filters.value.category = category
+      expandedId.value = null
+      loadPosts()
+    }
 
     function setTimeRange(range) {
       filters.value.time_range = range
-      selectedPost.value = null
+      expandedId.value = null
       loadPosts()
     }
 
@@ -313,11 +443,32 @@ export default {
       } finally { loading.value = false; loadingMore.value = false }
     }
 
-    async function loadStats() { stats.value = await getPostCategories() }
+    async function loadStats() {
+      try {
+        stats.value = await getPostCategories()
+      } catch (error) {
+        stats.value = { categories: [], content_type_stats: {}, participation_stats: {}, time_status_stats: {} }
+      }
+    }
     function toggleExpand(post) { expandedId.value = expandedId.value === post.id ? null : post.id }
     function applyFilters() { activeSearch.value = draftSearch.value.trim(); expandedId.value = null; loadPosts() }
     function clearSearch() { draftSearch.value = ''; activeSearch.value = ''; loadPosts() }
     function setSort(mode) { filters.value.sort = mode; expandedId.value = null; loadPosts() }
+    function removeFilterChip(key) {
+      if (key === 'search') { draftSearch.value = ''; activeSearch.value = '' }
+      if (key === 'category') filters.value.category = ''
+      if (key === 'time_range') filters.value.time_range = ''
+      if (key === 'sort') filters.value.sort = 'deadline'
+      expandedId.value = null
+      loadPosts()
+    }
+    function clearAllFilters() {
+      draftSearch.value = ''
+      activeSearch.value = ''
+      filters.value = { category: '', time_range: '', sort: 'deadline' }
+      expandedId.value = null
+      loadPosts()
+    }
     function loadMore() { loadingMore.value = true; loadPosts({ append: true }) }
     function hasAnyTime(post) { return post.event_start_at || post.event_end_at || post.deadline_at }
     async function runSync() {
@@ -330,19 +481,73 @@ export default {
       const d = new Date(value)
       return Number.isNaN(d.getTime()) ? '' : `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
     }
+    function daysUntil(value) {
+      if (!value) return null
+      const d = new Date(value)
+      if (Number.isNaN(d.getTime())) return null
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+      d.setHours(0, 0, 0, 0)
+      return Math.ceil((d - today) / 86400000)
+    }
+    function deadlineTone(value) {
+      const days = daysUntil(value)
+      if (days === null) return 'muted'
+      if (days <= 3) return 'urgent'
+      if (days <= 7) return 'soon'
+      return 'later'
+    }
+    function deadlineLabel(value) {
+      const days = daysUntil(value)
+      if (days === null) return t.value.deadline
+      if (days < 0) return '已截止'
+      if (days <= 3) return '3天内截止'
+      if (days <= 7) return '7天内'
+      return '7天外'
+    }
+
+    async function loadSupport() {
+      try {
+        const payload = await getSupport(getSupportClientId())
+        supportCount.value = Number(payload.count || 0)
+        supportLiked.value = Boolean(payload.liked) || localStorage.getItem(SUPPORT_LIKED_KEY) === '1'
+      } catch (error) {
+        supportLiked.value = localStorage.getItem(SUPPORT_LIKED_KEY) === '1'
+      }
+    }
+
+    async function supportProject() {
+      if (supportLiked.value || supportBusy.value) return
+      supportBusy.value = true
+      try {
+        const payload = await addSupport(getSupportClientId())
+        supportCount.value = Number(payload.count || supportCount.value)
+        supportLiked.value = Boolean(payload.liked)
+        if (payload.incremented) {
+          supportFloatKey.value += 1
+          supportPulse.value = true
+          window.setTimeout(() => { supportPulse.value = false }, 520)
+          window.setTimeout(() => { supportFloatKey.value = 0 }, 980)
+        }
+        if (supportLiked.value) localStorage.setItem(SUPPORT_LIKED_KEY, '1')
+      } finally {
+        supportBusy.value = false
+      }
+    }
 
     onMounted(async () => {
-      await Promise.all([loadPosts(), loadStats()])
+      await Promise.allSettled([loadPosts(), loadStats(), loadSupport()])
       if (!localStorage.getItem('lizhi-guide-done')) { showGuide.value = true }
     })
 
     return {
       posts, total, stats, expandedId, loading, loadingMore, syncing, errorMessage,
       draftSearch, activeSearch, filters, lastSyncJob,
+      supportCount, supportLiked, supportBusy, supportPulse, supportFloatKey,
       lang, darkMode, t, showGuide, guideStep, guideSteps,
-      categoryOptions, categoryLabel,
+      categoryOptions, activeFilterChips, syncMetrics, categoryLabel, deadlineTone, deadlineLabel,
       toggleLang, toggleDark, dismissGuide, nextGuideStep,
-      applyFilters, clearSearch, setSort, setTimeRange, toggleExpand, loadMore, runSync, formatDate, hasAnyTime,
+      applyFilters, clearSearch, clearAllFilters, removeFilterChip, setCategory, setSort, setTimeRange, toggleExpand, loadMore, runSync, supportProject, formatDate, hasAnyTime,
     }
   },
 }
@@ -458,12 +663,17 @@ button, input, select { font: inherit; }
 }
 .brand-icon {
   width: 56px; height: 56px;
-  background: linear-gradient(135deg, #c0392b, #e74c3c);
+  background: transparent;
   display: flex; align-items: center; justify-content: center;
-  border-radius: 18px;
-  box-shadow: 0 4px 16px rgba(192,57,43,0.35);
+  border-radius: 0;
+  box-shadow: none;
   position: relative;
-  overflow: hidden;
+  overflow: visible;
+}
+.brand-icon svg {
+  width: 48px;
+  height: 48px;
+  filter: drop-shadow(0 4px 10px rgba(120, 24, 30, 0.24));
 }
 .brand h1 {
   font-family: var(--title-font);
@@ -501,6 +711,115 @@ button, input, select { font: inherit; }
   top: 0;
   z-index: 90;
   padding: 12px 0;
+}
+
+.filter-panel {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 0 24px;
+  display: grid;
+  gap: 10px;
+}
+
+.search-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.search-row input {
+  flex: 1;
+  min-width: 0;
+  height: 42px;
+  padding: 9px 16px 9px 42px;
+  border: 1.5px solid var(--line);
+  border-radius: 100px;
+  color: var(--text);
+  background: rgba(90,143,92,0.04) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='17' height='17' viewBox='0 0 24 24' fill='none' stroke='%236b7a66' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cline x1='21' y1='21' x2='16.65' y2='16.65'/%3E%3C/svg%3E") 16px center no-repeat;
+  outline: none;
+}
+
+.search-row input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(90,143,92,0.1);
+}
+
+.search-action {
+  height: 42px;
+  padding: 0 18px;
+  border: none;
+  border-radius: 100px;
+  background: var(--primary);
+  color: #fff;
+  cursor: pointer;
+  font-family: var(--tag-font);
+  font-weight: 800;
+}
+
+.chip-row,
+.active-filter-row {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.chip-row::-webkit-scrollbar,
+.active-filter-row::-webkit-scrollbar {
+  display: none;
+}
+
+.chip-row.compact {
+  align-items: center;
+}
+
+.filter-chip,
+.active-filter-chip,
+.clear-filter-chip {
+  flex: 0 0 auto;
+  height: 32px;
+  padding: 0 14px;
+  border: 1.5px solid var(--line);
+  border-radius: 100px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-family: var(--tag-font);
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
+}
+
+.filter-chip.active,
+.filter-chip:hover {
+  border-color: var(--primary);
+  background: rgba(90,143,92,0.12);
+  color: var(--primary);
+}
+
+.active-filter-chip {
+  border-color: rgba(232,116,63,0.22);
+  background: rgba(232,116,63,0.1);
+  color: var(--accent);
+}
+
+.active-filter-chip span {
+  margin-left: 4px;
+}
+
+.clear-filter-chip {
+  border-color: transparent;
+  color: var(--muted);
+}
+
+.chip-divider {
+  flex: 0 0 1px;
+  height: 22px;
+  background: var(--line);
+  margin: 5px 2px;
 }
 
 .toolbar-grid {
@@ -769,10 +1088,31 @@ button, input, select { font: inherit; }
   gap: 8px;
 }
 .deadline-tag {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 2px 9px;
+  border-radius: 999px;
   font-size: 12px;
   font-family: var(--tag-font);
   color: var(--accent);
   font-weight: 700;
+}
+.deadline-urgent {
+  background: #fde2df;
+  color: #a82d25;
+}
+.deadline-soon {
+  background: #fff0d8;
+  color: #b86700;
+}
+.deadline-later {
+  background: rgba(90,143,92,0.12);
+  color: var(--primary);
+}
+.deadline-muted {
+  background: rgba(107,122,102,0.12);
+  color: var(--muted);
 }
 .source-tag {
   font-size: 11px;
@@ -838,33 +1178,26 @@ button, input, select { font: inherit; }
   align-items: center;
   gap: 12px;
 }
-.lychee-loader svg {
-  animation: lycheeBounce 1.2s ease-in-out infinite;
+.lychee-spin-loader {
+  overflow: visible;
 }
-.lychee-body {
-  animation: lycheePeel 1.2s ease-in-out infinite;
-}
-.lychee-leaf {
-  animation: lycheeSway 1.2s ease-in-out infinite;
-  transform-origin: center bottom;
+.lychee-spinner {
+  transform-box: fill-box;
+  transform-origin: center center;
+  transform-style: preserve-3d;
+  animation: lycheeSpin 0.9s linear infinite;
 }
 .loading-text {
   font-size: 0.85rem;
   color: var(--muted);
   animation: fadeInOut 1.2s ease-in-out infinite;
 }
-@keyframes lycheeBounce {
-  0%, 100% { transform: translateY(0) scale(1); }
-  50% { transform: translateY(-6px) scale(1.05); }
-}
-@keyframes lycheePeel {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.7; transform: scale(0.92); }
-}
-@keyframes lycheeSway {
-  0%, 100% { transform: rotate(0deg); }
-  25% { transform: rotate(-8deg); }
-  75% { transform: rotate(8deg); }
+@keyframes lycheeSpin {
+  0% { transform: rotateY(0deg); }
+  25% { transform: rotateY(90deg); }
+  50% { transform: rotateY(180deg); }
+  75% { transform: rotateY(270deg); }
+  100% { transform: rotateY(360deg); }
 }
 @keyframes fadeInOut {
   0%, 100% { opacity: 0.5; }
@@ -918,6 +1251,49 @@ button, input, select { font: inherit; }
   backdrop-filter: blur(4px);
 }
 
+.sync-summary {
+  max-width: 760px;
+  margin: 0 auto 18px;
+  padding: 12px 16px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: rgba(255,255,255,0.72);
+  display: grid;
+  grid-template-columns: minmax(80px, 1.1fr) repeat(4, minmax(72px, 1fr));
+  gap: 10px;
+  align-items: center;
+  box-shadow: 0 6px 18px rgba(45,58,41,0.06);
+}
+
+.sync-summary-title {
+  color: var(--primary);
+  font-family: var(--tag-font);
+  font-size: 13px;
+  font-weight: 900;
+  text-align: left;
+}
+
+.sync-metric {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 5px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-family: var(--tag-font);
+}
+
+.sync-metric strong {
+  color: var(--text);
+  font-size: 19px;
+  line-height: 1;
+}
+
+.sync-metric.filtered strong {
+  color: var(--accent);
+}
+
 .load-more-wrap {
   margin-top: 10px;
   display: flex;
@@ -964,6 +1340,129 @@ button, input, select { font: inherit; }
   background: linear-gradient(90deg, transparent, var(--primary), transparent);
   border-radius: 2px;
   margin: 0 auto 16px;
+}
+
+.support-widget {
+  width: auto;
+  margin: 0 0 0 4px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.support-copy {
+  display: grid;
+  gap: 2px;
+  text-align: left;
+  min-width: 76px;
+}
+
+.support-copy strong {
+  display: none;
+}
+
+.support-copy span {
+  color: var(--muted);
+  opacity: 0.64;
+  font-size: 12px;
+}
+
+.support-action {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.support-lychee-button {
+  width: 48px;
+  height: 48px;
+  border: 0;
+  padding: 0;
+  border-radius: 44% 52% 48% 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255,255,255,0.72);
+  box-shadow: 0 8px 20px rgba(120,24,30,0.12);
+  cursor: pointer;
+  transform-origin: center center;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+
+.support-lychee-button:hover {
+  transform: translateY(-2px) scale(1.04);
+  box-shadow: 0 12px 24px rgba(120,24,30,0.18);
+}
+
+.support-lychee-button.liked {
+  background: #fff4f2;
+  box-shadow: 0 10px 24px rgba(152,36,51,0.22);
+}
+
+.support-lychee-button.popping {
+  animation: supportPop 0.52s ease;
+}
+
+.support-lychee-button:disabled {
+  cursor: default;
+  opacity: 1;
+}
+
+.support-lychee-button:disabled:hover {
+  transform: none;
+}
+
+.support-basket {
+  position: relative;
+  min-width: 82px;
+  height: 58px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.support-basket svg {
+  filter: drop-shadow(0 5px 8px rgba(80,50,22,0.16));
+}
+
+.support-count {
+  position: absolute;
+  bottom: 4px;
+  min-width: 24px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.86);
+  color: #7c4f28;
+  font-family: var(--tag-font);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.support-plus-one {
+  position: absolute;
+  left: 50%;
+  top: -10px;
+  color: var(--accent);
+  font-family: var(--tag-font);
+  font-size: 17px;
+  font-weight: 900;
+  pointer-events: none;
+  animation: supportFloat 0.95s ease-out forwards;
+}
+
+@keyframes supportPop {
+  0% { transform: scale(1); }
+  42% { transform: scale(1.14) rotate(-4deg); }
+  100% { transform: scale(1); }
+}
+
+@keyframes supportFloat {
+  0% { opacity: 0; transform: translate(-50%, 10px) scale(0.9); }
+  20% { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%, -32px) scale(1.08); }
 }
 
 /* === Dark Mode === */
@@ -1164,5 +1663,15 @@ button, input, select { font: inherit; }
     padding: 0 12px;
   }
   .post-card::before { display: none; }
+  .support-widget {
+    width: 100%;
+    margin-left: 0;
+    flex-direction: row;
+    justify-content: flex-end;
+    gap: 10px;
+  }
+  .support-copy {
+    text-align: right;
+  }
 }
 </style>
