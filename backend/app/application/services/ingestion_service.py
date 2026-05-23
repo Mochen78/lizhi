@@ -210,7 +210,7 @@ class IngestionService:
             post = db.query(Post).filter(Post.upstream_post_id == upstream_post_id).first()
             existing_hash = post.content_hash if post else ""
             changed = content_hash != existing_hash
-            llm_result = {
+            llm_result: dict = {
                 "summary": "",
                 "structured": {},
                 "status": LlmStatus.NOT_REQUESTED.value,
@@ -223,6 +223,14 @@ class IngestionService:
                     llm_count += 1
                 elif not normalize_whitespace(summary):
                     llm_result["status"] = LlmStatus.FALLBACK.value
+            elif post and post.llm_status == LlmStatus.COMPLETED.value:
+                llm_result = {
+                    "summary": post.llm_summary,
+                    "structured": json.loads(post.llm_structured_json) if post.llm_structured_json else {},
+                    "status": LlmStatus.COMPLETED.value,
+                    "model": post.llm_model,
+                    "processed_at": post.llm_processed_at,
+                }
 
             post, created = self._upsert_post(
                 db,
