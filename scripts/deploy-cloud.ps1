@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory = $true)]
-    [string]$Host,
+    [string]$ServerHost,
     [string]$User = "root",
     [int]$Port = 22,
     [string]$TargetDir = "/opt/campus-opportunity",
@@ -49,9 +49,9 @@ Write-Host "Packaging deploy bundle..."
     frontend/dist `
     scripts/cloud
 
-Write-Host "Uploading bundle to $User@$Host ..."
-& scp.exe -P $Port $BundlePath "${User}@${Host}:${RemoteBundle}"
-& scp.exe -P $Port (Join-Path $Root "scripts\cloud\remote-deploy.sh") "${User}@${Host}:${RemoteScript}"
+Write-Host "Uploading bundle to $User@$ServerHost ..."
+& scp.exe -P $Port $BundlePath "${User}@${ServerHost}:${RemoteBundle}"
+& scp.exe -P $Port (Join-Path $Root "scripts\cloud\remote-deploy.sh") "${User}@${ServerHost}:${RemoteScript}"
 
 $RemoteCommand = @"
 export TARGET_DIR='$TargetDir'
@@ -61,8 +61,8 @@ bash '$RemoteScript' '$RemoteBundle'
 "@
 
 Write-Host "Running remote deploy..."
-& ssh.exe -p $Port "${User}@${Host}" $RemoteCommand
+& ssh.exe -p $Port "${User}@${ServerHost}" $RemoteCommand
 
 Write-Host ""
 Write-Host "Deploy finished."
-Write-Host "Backend health should be available at: http://$Host/api/health"
+Write-Host "Backend health should be available at: http://$ServerHost/api/health"

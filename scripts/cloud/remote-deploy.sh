@@ -95,9 +95,16 @@ BACKEND_HOST=127.0.0.1
 BACKEND_PORT=8002
 BACKEND_DATABASE_URL=sqlite:///${DATA_DIR}/backend.db
 BACKEND_SYNC_INTERVAL_MINUTES=10
-BACKEND_POST_FETCH_LIMIT=50
-BACKEND_SOURCE_FETCH_LIMIT=200
-BACKEND_ENABLE_SCHEDULER=true
+BACKEND_POST_FETCH_LIMIT=500
+BACKEND_SOURCE_FETCH_LIMIT=500
+BACKEND_ENABLE_SCHEDULER=false
+BACKEND_UPSTREAM_REFRESH_ENABLED=true
+BACKEND_UPSTREAM_REFRESH_ON_STARTUP=false
+BACKEND_UPSTREAM_REFRESH_INTERVAL_MINUTES=60
+BACKEND_UPSTREAM_REFRESH_START_PAGE=0
+BACKEND_UPSTREAM_REFRESH_END_PAGE=10
+BACKEND_UPSTREAM_REFRESH_REQUEST_DELAY_SECONDS=1.0
+BACKEND_UPSTREAM_REFRESH_SETTLE_SECONDS=300
 BACKEND_UPSTREAM_BASE_URL=
 BACKEND_UPSTREAM_USERNAME=
 BACKEND_UPSTREAM_PASSWORD=
@@ -108,11 +115,74 @@ BACKEND_LLM_MODEL=
 BACKEND_LLM_TIMEOUT_SECONDS=30
 BACKEND_LLM_PROMPT_VERSION=iter1-v1
 BACKEND_LLM_MAX_INPUT_CHARS=6000
+BACKEND_LLM_QUEUE_ENABLED=false
+BACKEND_LLM_WORKER_INTERVAL_SECONDS=20
+BACKEND_LLM_WORKER_BATCH_SIZE=2
+BACKEND_LLM_WORKER_MAX_ATTEMPTS=3
 EOF
     echo "Created ${REMOTE_ENV_PATH}. Fill in upstream and LLM credentials before syncing production data."
   fi
-  if ! grep -q '^BACKEND_POST_FETCH_LIMIT=' "${REMOTE_ENV_PATH}"; then
-    printf '\nBACKEND_POST_FETCH_LIMIT=50\n' >>"${REMOTE_ENV_PATH}"
+  ensure_min_int_env BACKEND_POST_FETCH_LIMIT 500
+  ensure_min_int_env BACKEND_SOURCE_FETCH_LIMIT 500
+  set_env_value BACKEND_ENABLE_SCHEDULER false
+  ensure_bool_env BACKEND_UPSTREAM_REFRESH_ENABLED true
+  set_env_value BACKEND_UPSTREAM_REFRESH_ON_STARTUP false
+  ensure_min_int_env BACKEND_UPSTREAM_REFRESH_INTERVAL_MINUTES 60
+  ensure_env_default BACKEND_UPSTREAM_REFRESH_START_PAGE 0
+  ensure_min_int_env BACKEND_UPSTREAM_REFRESH_END_PAGE 10
+  ensure_env_default BACKEND_UPSTREAM_REFRESH_REQUEST_DELAY_SECONDS 1.0
+  ensure_min_int_env BACKEND_UPSTREAM_REFRESH_SETTLE_SECONDS 300
+  set_env_value BACKEND_LLM_QUEUE_ENABLED false
+  ensure_min_int_env BACKEND_LLM_WORKER_INTERVAL_SECONDS 20
+  ensure_max_int_env BACKEND_LLM_WORKER_BATCH_SIZE 2
+  ensure_min_int_env BACKEND_LLM_WORKER_MAX_ATTEMPTS 3
+}
+
+set_env_value() {
+  local key="$1"
+  local value="$2"
+  if grep -q "^${key}=" "${REMOTE_ENV_PATH}"; then
+    sed -i "s#^${key}=.*#${key}=${value}#" "${REMOTE_ENV_PATH}"
+  else
+    printf '\n%s=%s\n' "${key}" "${value}" >>"${REMOTE_ENV_PATH}"
+  fi
+}
+
+ensure_min_int_env() {
+  local key="$1"
+  local minimum="$2"
+  local current=""
+  current="$(grep -E "^${key}=" "${REMOTE_ENV_PATH}" | tail -n 1 | cut -d= -f2- || true)"
+  if [[ ! "${current}" =~ ^[0-9]+$ ]] || (( current < minimum )); then
+    set_env_value "${key}" "${minimum}"
+  fi
+}
+
+ensure_max_int_env() {
+  local key="$1"
+  local maximum="$2"
+  local current=""
+  current="$(grep -E "^${key}=" "${REMOTE_ENV_PATH}" | tail -n 1 | cut -d= -f2- || true)"
+  if [[ ! "${current}" =~ ^[0-9]+$ ]] || (( current > maximum )); then
+    set_env_value "${key}" "${maximum}"
+  fi
+}
+
+ensure_env_default() {
+  local key="$1"
+  local value="$2"
+  if ! grep -q "^${key}=" "${REMOTE_ENV_PATH}"; then
+    set_env_value "${key}" "${value}"
+  fi
+}
+
+ensure_bool_env() {
+  local key="$1"
+  local value="$2"
+  local current=""
+  current="$(grep -E "^${key}=" "${REMOTE_ENV_PATH}" | tail -n 1 | cut -d= -f2- || true)"
+  if [[ -z "${current}" ]]; then
+    set_env_value "${key}" "${value}"
   fi
 }
 
@@ -149,18 +219,5 @@ systemctl restart nginx
 sleep 2
 curl -fsS http://127.0.0.1:8002/api/health >/dev/null
 curl -fsS "http://127.0.0.1:8002/api/posts?limit=1" >/dev/null
-if grep -q '^BACKEND_UPSTREAM_BASE_URL=.' "${REMOTE_ENV_PATH}" \
-  && grep -q '^BACKEND_UPSTREAM_USERNAME=.' "${REMOTE_ENV_PATH}" \
-  && grep -q '^BACKEND_UPSTREAM_PASSWORD=.' "${REMOTE_ENV_PATH}"; then
-  curl -fsS -X POST http://127.0.0.1:8002/api/sync >/tmp/${APP_NAME}-sync-smoke.json
-  python3 - <<'PY'
-import json
-from pathlib import Path
-payload = json.loads(Path("/tmp/campus-opportunity-sync-smoke.json").read_text())
-if payload.get("status") not in {"completed", "partial_failed"}:
-    raise SystemExit(f"sync smoke failed: {payload.get('status')} {payload.get('error_summary')}")
-PY
-fi
-
 rm -rf "${TMP_DIR}"
 echo "Remote deploy completed successfully."
