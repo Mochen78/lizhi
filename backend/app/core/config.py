@@ -54,18 +54,27 @@ class Settings:
     tencent_secret_id: str = ""
     tencent_secret_key: str = ""
     tencent_ocr_region: str = "ap-guangzhou"
-    ocr_action: str = "RecognizeAgent"
+    ocr_action: str = "GeneralAccurateOCR"
+    ocr_fallback_action: str = "RecognizeAgent"
     ocr_max_images_per_post: int = 8
     ocr_min_text_length: int = 120
     ocr_timeout_seconds: int = 20
     ocr_monthly_limit: int = 1000
+    ocr_fallback_monthly_limit: int = 1000
     ocr_cache_enabled: bool = True
     ocr_count_failed_attempts: bool = True
+    semantic_enabled: bool = True
+    semantic_model: str = "BAAI/bge-small-zh-v1.5"
+    semantic_centroid_dir: str = ""
+    semantic_accept_threshold: float = 0.68
+    semantic_strong_threshold: float = 0.75
+    semantic_margin_threshold: float = 0.06
 
     @classmethod
     def from_env(cls) -> "Settings":
         load_dotenv(Path(__file__).resolve().parents[2] / ".env")
         default_db_path = Path(__file__).resolve().parents[3] / ".run" / "backend.db"
+        default_semantic_dir = Path(__file__).resolve().parents[3] / ".run" / "embeddings"
         return cls(
             host=os.getenv("BACKEND_HOST", "0.0.0.0"),
             port=int(os.getenv("BACKEND_PORT", "8002")),
@@ -104,11 +113,19 @@ class Settings:
             tencent_secret_id=os.getenv("BACKEND_TENCENT_SECRET_ID", ""),
             tencent_secret_key=os.getenv("BACKEND_TENCENT_SECRET_KEY", ""),
             tencent_ocr_region=os.getenv("BACKEND_TENCENT_OCR_REGION", "ap-guangzhou"),
-            ocr_action=os.getenv("BACKEND_OCR_ACTION", "RecognizeAgent"),
+            ocr_action=os.getenv("BACKEND_OCR_ACTION", "GeneralAccurateOCR"),
+            ocr_fallback_action=os.getenv("BACKEND_OCR_FALLBACK_ACTION", "RecognizeAgent"),
             ocr_max_images_per_post=int(os.getenv("BACKEND_OCR_MAX_IMAGES_PER_POST", "8")),
             ocr_min_text_length=int(os.getenv("BACKEND_OCR_MIN_TEXT_LENGTH", "120")),
             ocr_timeout_seconds=int(os.getenv("BACKEND_OCR_TIMEOUT_SECONDS", "20")),
             ocr_monthly_limit=int(os.getenv("BACKEND_OCR_MONTHLY_LIMIT", "1000")),
+            ocr_fallback_monthly_limit=int(os.getenv("BACKEND_OCR_FALLBACK_MONTHLY_LIMIT", "1000")),
             ocr_cache_enabled=_as_bool(os.getenv("BACKEND_OCR_CACHE_ENABLED"), True),
             ocr_count_failed_attempts=_as_bool(os.getenv("BACKEND_OCR_COUNT_FAILED_ATTEMPTS"), True),
+            semantic_enabled=_as_bool(os.getenv("BACKEND_SEMANTIC_ENABLED"), True),
+            semantic_model=os.getenv("BACKEND_SEMANTIC_MODEL", "BAAI/bge-small-zh-v1.5"),
+            semantic_centroid_dir=os.getenv("BACKEND_SEMANTIC_CENTROID_DIR", default_semantic_dir.as_posix()),
+            semantic_accept_threshold=float(os.getenv("BACKEND_SEMANTIC_ACCEPT_THRESHOLD", "0.68")),
+            semantic_strong_threshold=float(os.getenv("BACKEND_SEMANTIC_STRONG_THRESHOLD", "0.75")),
+            semantic_margin_threshold=float(os.getenv("BACKEND_SEMANTIC_MARGIN_THRESHOLD", "0.06")),
         )

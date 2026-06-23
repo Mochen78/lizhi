@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from app.application.services.ocr_service import (
+    OCR_ACTION_GENERAL_ACCURATE,
+    OCR_ACTION_RECOGNIZE_AGENT,
     OCR_TEXT_MARKER,
     OCR_STATUS_FAILED,
     OCR_STATUS_SKIPPED_LIMIT,
@@ -19,18 +21,22 @@ class StubOcrClient:
     def __init__(self, text_by_url: dict[str, str]):
         self.text_by_url = text_by_url
         self.urls: list[str] = []
+        self.actions: list[str] = []
 
-    def recognize_image_url(self, image_url: str) -> str:
+    def recognize_image_url(self, image_url: str, *, action: str | None = None) -> str:
         self.urls.append(image_url)
+        self.actions.append(action or "")
         return self.text_by_url.get(image_url, "")
 
 
 class FailingOcrClient:
     def __init__(self):
         self.urls: list[str] = []
+        self.actions: list[str] = []
 
-    def recognize_image_url(self, image_url: str) -> str:
+    def recognize_image_url(self, image_url: str, *, action: str | None = None) -> str:
         self.urls.append(image_url)
+        self.actions.append(action or "")
         raise RuntimeError("provider failed")
 
 
@@ -127,6 +133,7 @@ def test_ocr_service_monthly_limit_skips_extra_images_without_text_warning(tmp_p
         ocr_min_text_length=20,
         ocr_max_images_per_post=2,
         ocr_monthly_limit=1,
+        ocr_fallback_monthly_limit=0,
     )
     _, session_factory = build_session_factory(settings)
     first_url = "https://example.com/one.jpg"
@@ -159,6 +166,7 @@ def test_ocr_service_failed_attempt_can_consume_monthly_limit_without_error_text
         ocr_min_text_length=20,
         ocr_max_images_per_post=2,
         ocr_monthly_limit=1,
+        ocr_fallback_monthly_limit=0,
         ocr_count_failed_attempts=True,
     )
     _, session_factory = build_session_factory(settings)
@@ -215,3 +223,154 @@ def test_recognize_agent_response_parser_extracts_full_text_lines():
     }
 
     assert _extract_recognize_agent_lines(payload) == ["舞台招募", "截止日期：2026.3.20"]
+
+
+def test_ocr_service_switches_to_fallback_when_primary_limit_reached(tmp_path):
+    settings = Settings(
+        database_url=f"sqlite:///{(tmp_path / 'ocr-fallback.db').as_posix()}",
+        ocr_enabled=True,
+        ocr_min_text_length=20,
+        ocr_max_images_per_post=2,
+        ocr_monthly_limit=1,
+        ocr_fallback_monthly_limit=1,
+        ocr_action=OCR_ACTION_GENERAL_ACCURATE,
+        ocr_fallback_action=OCR_ACTION_RECOGNIZE_AGENT,
+    )
+    _, session_factory = build_session_factory(settings)
+    first_url = "https://example.com/one.jpg"
+    second_url = "https://example.com/two.jpg"
+    raw_post = {"content_html": f'<img src="{first_url}" /><img src="{second_url}" />'}
+    client = StubOcrClient({first_url: "第一张图文字", second_url: "第二张图文字"})
+    service = OcrService(settings, client=client, session_factory=session_factory)
+
+    result = service.maybe_append_ocr_text(raw_post, "")
+
+    assert client.urls == [first_url, second_url]
+    assert client.actions == [OCR_ACTION_GENERAL_ACCURATE, OCR_ACTION_RECOGNIZE_AGENT]
+    assert "第一张图文字" in result.content_text
+    assert "第二张图文字" in result.content_text
+
+    db = session_factory()
+    try:
+        usage = sorted((row.ocr_action, row.status) for row in db.query(OcrUsageLog).all())
+        assert usage == [
+            (OCR_ACTION_GENERAL_ACCURATE, OCR_STATUS_SUCCESS),
+            (OCR_ACTION_RECOGNIZE_AGENT, OCR_STATUS_SUCCESS),
+        ]
+    finally:
+        db.close()
+
+
+def test_ocr_service_reuses_cache_across_actions(tmp_path):
+    from hashlib import sha256
+
+    from app.application.services.ocr_service import current_ocr_month_key, hash_image_url
+
+    settings = Settings(
+        database_url=f"sqlite:///{(tmp_path / 'ocr-xcache.db').as_posix()}",
+        ocr_enabled=True,
+        ocr_min_text_length=20,
+        ocr_monthly_limit=1,
+        ocr_fallback_monthly_limit=1,
+        ocr_action=OCR_ACTION_GENERAL_ACCURATE,
+        ocr_fallback_action=OCR_ACTION_RECOGNIZE_AGENT,
+    )
+    _, session_factory = build_session_factory(settings)
+    image_url = "https://example.com/post.jpg"
+    raw_post = {"id": "P010", "content_html": f'<img src="{image_url}" />'}
+
+    # Seed a SUCCESS cache row under the primary model directly, and exhaust the
+    # primary quota so a cache miss would otherwise route to the fallback model.
+    month_key = current_ocr_month_key()
+    db = session_factory()
+    try:
+        db.add(
+            OcrImageCache(
+                image_url_hash=hash_image_url(image_url),
+                image_url=image_url,
+                ocr_action=OCR_ACTION_GENERAL_ACCURATE,
+                status=OCR_STATUS_SUCCESS,
+                ocr_text="已被主模型识别",
+                month_key=month_key,
+                upstream_post_id="P010",
+            )
+        )
+        db.add(
+            OcrUsageLog(
+                image_url_hash=sha256(b"other").hexdigest(),
+                image_url="https://example.com/other.jpg",
+                ocr_action=OCR_ACTION_GENERAL_ACCURATE,
+                status=OCR_STATUS_SUCCESS,
+                month_key=month_key,
+                upstream_post_id="",
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    client = StubOcrClient({image_url: "不应调用备用模型"})
+    service = OcrService(settings, client=client, session_factory=session_factory)
+
+    result = service.maybe_append_ocr_text(raw_post, "")
+
+    assert client.urls == []
+    assert "已被主模型识别" in result.content_text
+    assert "不应调用备用模型" not in result.content_text
+
+
+def test_ocr_service_skips_when_both_models_exhausted(tmp_path):
+    settings = Settings(
+        database_url=f"sqlite:///{(tmp_path / 'ocr-both.db').as_posix()}",
+        ocr_enabled=True,
+        ocr_min_text_length=20,
+        ocr_max_images_per_post=2,
+        ocr_monthly_limit=0,
+        ocr_fallback_monthly_limit=0,
+        ocr_action=OCR_ACTION_GENERAL_ACCURATE,
+        ocr_fallback_action=OCR_ACTION_RECOGNIZE_AGENT,
+    )
+    _, session_factory = build_session_factory(settings)
+    first_url = "https://example.com/one.jpg"
+    second_url = "https://example.com/two.jpg"
+    raw_post = {"content_html": f'<img src="{first_url}" /><img src="{second_url}" />'}
+    client = StubOcrClient({first_url: "第一张图文字", second_url: "第二张图文字"})
+    service = OcrService(settings, client=client, session_factory=session_factory)
+
+    result = service.maybe_append_ocr_text(raw_post, "")
+
+    assert client.urls == []
+    assert result.content_text == ""
+
+    db = session_factory()
+    try:
+        statuses = sorted(row.status for row in db.query(OcrImageCache).all())
+        assert statuses == [OCR_STATUS_SKIPPED_LIMIT, OCR_STATUS_SKIPPED_LIMIT]
+        assert db.query(OcrUsageLog).count() == 0
+    finally:
+        db.close()
+
+
+def test_ocr_service_disabled_fallback_uses_primary_only(tmp_path):
+    settings = Settings(
+        database_url=f"sqlite:///{(tmp_path / 'ocr-nofb.db').as_posix()}",
+        ocr_enabled=True,
+        ocr_min_text_length=20,
+        ocr_max_images_per_post=2,
+        ocr_monthly_limit=1,
+        ocr_fallback_action="",
+        ocr_action=OCR_ACTION_GENERAL_ACCURATE,
+    )
+    _, session_factory = build_session_factory(settings)
+    first_url = "https://example.com/one.jpg"
+    second_url = "https://example.com/two.jpg"
+    raw_post = {"content_html": f'<img src="{first_url}" /><img src="{second_url}" />'}
+    client = StubOcrClient({first_url: "第一张图文字", second_url: "第二张图文字"})
+    service = OcrService(settings, client=client, session_factory=session_factory)
+
+    result = service.maybe_append_ocr_text(raw_post, "")
+
+    assert client.urls == [first_url]
+    assert client.actions == [OCR_ACTION_GENERAL_ACCURATE]
+    assert "第一张图文字" in result.content_text
+    assert "第二张图文字" not in result.content_text

@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>荔知 API 路由函数关系图</title>
+  <style>
+    :root {
+      --bg: #f4f7fb;
+      --ink: #172033;
+      --muted: #5c6b82;
+      --panel: #ffffff;
+      --line: #94a3b8;
+      --navy: #111827;
+      --blue: #dbeafe;
+      --green: #dcfce7;
+      --amber: #fef3c7;
+      --violet: #ede9fe;
+      --rose: #ffe4e6;
+      --gray: #f1f5f9;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family:
+        "Microsoft YaHei",
+        "PingFang SC",
+        "Noto Sans CJK SC",
+        "Source Han Sans SC",
+        Arial,
+        sans-serif;
+    }
+
+    .page {
+      width: 1760px;
+      min-height: 2500px;
+      margin: 0 auto;
+      padding: 38px 58px 34px;
+      background: var(--bg);
+    }
+
+    .title {
+      min-height: 76px;
+      border-radius: 16px;
+      background: var(--navy);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 48px;
+      line-height: 1.15;
+      font-weight: 900;
+      letter-spacing: 0;
+      text-align: center;
+    }
+
+    .summary {
+      margin: 16px 10px 0;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+    }
+
+    .summary-item {
+      min-height: 68px;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      background: var(--panel);
+      padding: 12px 16px;
+      font-size: 18px;
+      line-height: 1.35;
+      color: var(--muted);
+    }
+
+    .summary-item strong {
+      display: block;
+      color: var(--ink);
+      font-size: 21px;
+      margin-bottom: 4px;
+    }
+
+    .chart {
+      margin-top: 20px;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      min-height: 2100px;
+      overflow: visible;
+    }
+
+    mermaid-renderer {
+      width: 1620px;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      overflow: visible;
+    }
+
+    mermaid-renderer svg {
+      width: 1560px !important;
+      max-width: none !important;
+      height: auto !important;
+      overflow: visible;
+    }
+
+    mermaid-renderer .node rect,
+    mermaid-renderer .node polygon,
+    mermaid-renderer .node path {
+      stroke-width: 2.5px !important;
+    }
+
+    mermaid-renderer .node rect {
+      rx: 10px;
+      ry: 10px;
+    }
+
+    mermaid-renderer .nodeLabel,
+    mermaid-renderer .edgeLabel,
+    mermaid-renderer foreignObject,
+    mermaid-renderer .label {
+      font-family:
+        "Microsoft YaHei",
+        "PingFang SC",
+        "Noto Sans CJK SC",
+        "Source Han Sans SC",
+        Arial,
+        sans-serif !important;
+      letter-spacing: 0 !important;
+    }
+
+    mermaid-renderer .nodeLabel {
+      color: var(--ink) !important;
+      font-weight: 700 !important;
+    }
+
+    mermaid-renderer .edgeLabel {
+      color: #334155 !important;
+      background: var(--bg) !important;
+      border-radius: 4px;
+    }
+
+    mermaid-renderer .flowchart-link {
+      stroke: #475569 !important;
+      stroke-width: 2.5px !important;
+    }
+
+    mermaid-renderer marker path {
+      fill: #475569 !important;
+      stroke: #475569 !important;
+    }
+
+    .footer {
+      margin-top: 12px;
+      min-height: 50px;
+      border-radius: 8px;
+      background: #e2e8f0;
+      color: #1e293b;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 10px 24px;
+      font-size: 20px;
+      line-height: 1.35;
+      text-align: center;
+    }
+
+    .render-error {
+      width: 1200px;
+      margin: 80px auto;
+      padding: 24px;
+      border: 2px solid #b91c1c;
+      border-radius: 8px;
+      background: #fef2f2;
+      color: #7f1d1d;
+      font-size: 22px;
+      line-height: 1.45;
+      white-space: pre-wrap;
+    }
+
+    @media (max-width: 1760px) {
+      body {
+        overflow-x: auto;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page" aria-label="荔知 API 路由函数关系图">
+    <header class="title">荔知 API 路由函数关系图</header>
+
+    <section class="summary" aria-label="说明">
+      <div class="summary-item"><strong>目标</strong>展示 API 路由函数、服务层和数据库访问关系</div>
+      <div class="summary-item"><strong>当前问题</strong>同步路由在当前测试环境会触发 AnyIO 线程池挂住</div>
+      <div class="summary-item"><strong>第一步改造</strong>路由函数改为 async def，暂不改数据库层</div>
+      <div class="summary-item"><strong>不改内容</strong>QueryService、IngestionService、模型和前端 UI 保持不变</div>
+    </section>
+
+    <section class="chart" aria-label="Mermaid API 路由图">
+      <mermaid-renderer source-id="api-routes-source"></mermaid-renderer>
+      <script type="text/plain" id="api-routes-source">
+flowchart TD
+    Client["前端 / 测试客户端"]:::client
+    App["FastAPI create_app<br>注册所有 router"]:::app
+    Client --> App
+
+    subgraph Posts["posts_router<br>/api/posts"]
+      P1["GET /api/posts<br>list_posts<br>建议改 async def"]:::route
+      P2["GET /api/posts/categories<br>category_stats<br>建议改 async def"]:::route
+      P3["GET /api/posts/{post_id}<br>get_post<br>建议改 async def"]:::route
+    end
+
+    subgraph Sources["sources_router<br>/api/sources"]
+      S1["GET /api/sources<br>list_sources<br>建议改 async def"]:::route
+    end
+
+    subgraph Support["support_router<br>/api/support"]
+      U1["GET /api/support<br>get_support<br>建议改 async def"]:::route
+      U2["POST /api/support<br>add_support<br>建议改 async def"]:::route
+    end
+
+    subgraph Health["health_router<br>/api/health"]
+      H1["GET /api/health<br>health<br>建议改 async def"]:::route
+    end
+
+    subgraph Jobs["jobs_router<br>/api/jobs"]
+      J1["POST /api/jobs/refresh<br>create_refresh_jobs<br>建议改 async def"]:::route
+      J2["POST /api/jobs/backfill<br>create_backfill_jobs<br>建议改 async def"]:::route
+      J3["GET /api/jobs/summary<br>get_job_summary<br>建议改 async def"]:::route
+      J4["GET /api/jobs/ingestion-health<br>get_ingestion_health<br>建议改 async def"]:::route
+      J5["GET /api/jobs/{job_id}<br>get_job<br>建议改 async def"]:::route
+    end
+
+    subgraph Sync["sync_router<br>/api/sync"]
+      Y1["POST /api/sync<br>manual_sync<br>已经 async def"]:::asyncRoute
+      Y2["GET /api/sync/jobs/{job_id}<br>get_sync_job<br>建议改 async def"]:::route
+      Y3["GET /api/sync/llm-queue<br>get_llm_queue_status<br>建议改 async def"]:::route
+      Y4["POST /api/sync/llm-queue/run<br>run_llm_queue_once<br>已经 async def"]:::asyncRoute
+    end
+
+    App --> Posts
+    App --> Sources
+    App --> Support
+    App --> Health
+    App --> Jobs
+    App --> Sync
+
+    DBDep["get_db<br>创建同步 SQLAlchemy Session"]:::db
+    DB[("SQLite / 数据库")]:::db
+    Query["QueryService<br>列表 / 详情 / 统计 / 来源"]:::service
+    JobService["JobQueueService<br>刷新任务 / 回填任务 / 队列查询"]:::service
+    Ingestion["IngestionService<br>手动同步 / 内容入库"]:::service
+    LLMQueue["LlmQueueService<br>LLM 队列处理"]:::service
+
+    P1 --> DBDep
+    P2 --> DBDep
+    P3 --> DBDep
+    S1 --> DBDep
+    U1 --> DBDep
+    U2 --> DBDep
+
+    P1 --> Query
+    P2 --> Query
+    P3 --> Query
+    S1 --> Query
+    Y2 --> Query
+
+    H1 --> DB
+    DBDep --> DB
+    Query --> DB
+
+    U1 --> DB
+    U2 --> DB
+
+    J1 --> JobService
+    J2 --> JobService
+    J3 --> JobService
+    J4 --> DB
+    J5 --> JobService
+
+    Y1 --> Ingestion
+    Y1 --> Query
+    Y2 --> Query
+    Y3 --> DB
+    Y4 --> LLMQueue
+
+    Note1["第一阶段：只改路由签名为 async def<br>同步 DB 逻辑暂时保持不变"]:::note
+    Note2["测试配套：test_api.py 使用动态未来日期<br>避免固定 2026-05-28 过期"]:::note
+
+    Posts -.-> Note1
+    Health -.-> Note1
+    Note1 -.-> Note2
+
+    classDef client fill:#111827,stroke:#334155,color:#ffffff,stroke-width:2px;
+    classDef app fill:#dbeafe,stroke:#2563eb,color:#172033,stroke-width:2px;
+    classDef route fill:#ffffff,stroke:#94a3b8,color:#172033,stroke-width:2px;
+    classDef asyncRoute fill:#dcfce7,stroke:#16a34a,color:#14532d,stroke-width:2px;
+    classDef service fill:#ede9fe,stroke:#7c3aed,color:#2e1065,stroke-width:2px;
+    classDef db fill:#fef3c7,stroke:#d97706,color:#451a03,stroke-width:2px;
+    classDef note fill:#ffe4e6,stroke:#e11d48,color:#881337,stroke-width:2px,stroke-dasharray: 6 4;
+      </script>
+    </section>
+
+    <footer class="footer">
+      说明：绿色节点表示当前已经是 async def；白色节点是第一阶段建议改 async def 的同步 API 路由。
+    </footer>
+  </main>
+
+  <script>
+    var MERMAID_CDN = 'https://cdn.jsdelivr.net/npm/mermaid@10.9.3/dist/mermaid.min.js';
+    document.write('<script src="./frontend/node_modules/mermaid/dist/mermaid.min.js"><\/script>');
+    if (typeof mermaid === 'undefined') {
+      document.write('<script src="' + MERMAID_CDN + '"><\/script>');
+    }
+  </script>
+  <script>
+    class MermaidRenderer extends HTMLElement {
+      async connectedCallback() {
+        if (typeof mermaid === 'undefined') {
+          this.innerHTML = '<div class="render-error">Mermaid 库加载失败：本地路径和 CDN 均不可用。</div>';
+          return;
+        }
+
+        const sourceId = this.getAttribute('source-id');
+        const sourceEl = document.getElementById(sourceId);
+        if (!sourceEl) {
+          this.innerHTML = '<div class="render-error">找不到 Mermaid 源码。</div>';
+          return;
+        }
+
+        mermaid.initialize({
+          startOnLoad: false,
+          securityLevel: 'loose',
+          theme: 'base',
+          flowchart: {
+            curve: 'linear',
+            htmlLabels: true,
+            nodeSpacing: 42,
+            rankSpacing: 58,
+            padding: 12
+          },
+          themeVariables: {
+            fontFamily: 'Microsoft YaHei, PingFang SC, Noto Sans CJK SC, Arial, sans-serif',
+            fontSize: '18px',
+            primaryTextColor: '#172033',
+            edgeLabelBackground: '#f4f7fb',
+            lineColor: '#475569'
+          }
+        });
+
+        try {
+          const source = sourceEl.textContent.trim();
+          const id = `api-routes-${Math.random().toString(36).slice(2)}`;
+          const { svg } = await mermaid.render(id, source);
+          this.innerHTML = svg;
+          const rendered = this.querySelector('svg');
+          if (rendered) {
+            rendered.setAttribute('preserveAspectRatio', 'xMidYMin meet');
+            rendered.removeAttribute('height');
+          }
+        } catch (error) {
+          this.innerHTML = `<div class="render-error">Mermaid 渲染失败：\n${String(error.message || error)}</div>`;
+        }
+      }
+    }
+
+    customElements.define('mermaid-renderer', MermaidRenderer);
+  </script>
+</body>
+</html>

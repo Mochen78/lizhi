@@ -21,7 +21,7 @@ def _normalize_client_id(client_id: str) -> str:
 
 
 @router.get("", response_model=SupportResponse)
-def get_support(client_id: str = Query(default=""), db: Session = Depends(get_db)):
+async def get_support(client_id: str = Query(default=""), db: Session = Depends(get_db)):
     token = _normalize_client_id(client_id)
     liked = False
     if token:
@@ -30,7 +30,7 @@ def get_support(client_id: str = Query(default=""), db: Session = Depends(get_db
 
 
 @router.post("", response_model=SupportResponse)
-def add_support(payload: SupportRequest, db: Session = Depends(get_db)):
+async def add_support(payload: SupportRequest, db: Session = Depends(get_db)):
     token = _normalize_client_id(payload.client_id)
     if len(token) < 8:
         return SupportResponse(count=_count_supports(db), liked=False)

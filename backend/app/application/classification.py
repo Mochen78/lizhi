@@ -87,6 +87,15 @@ CATEGORY_CORE_KEYWORDS: dict[str, list[str]] = {
         "学生会",
         "艺术节",
         "电竞赛",
+        "合唱团",
+        "艺术团",
+        "文艺团体",
+        "社团活动",
+        "团课",
+        "排练",
+        "演出",
+        "春季招新",
+        "秋季招新",
     ],
     "lecture": [
         "讲座",
@@ -192,6 +201,8 @@ CATEGORY_COMBO_RULES: dict[str, list[tuple[list[str], ...]]] = {
         (["学生会"], ["纳新"]),
         (["迎新"], ["活动"]),
         (["文化"], ["活动"]),
+        (["社团", "艺术团", "合唱团", "文艺团体"], ["招新", "纳新"]),
+        (["社团", "艺术团", "合唱团", "文艺团体"], ["宣讲", "说明会", "分享会"]),
     ],
     "lecture": [
         (["专家"], ["讲座"]),
@@ -300,7 +311,7 @@ CATEGORY_EXCLUDE_KEYWORDS: dict[str, list[str]] = {
     ],
     "volunteer": ["招聘", "实习", "竞赛", "保研"],
     "competition": ["获奖名单", "结果公示", "赛事回顾"],
-    "recruitment": ["学术讲座", "经验分享", "技术论坛"],
+    "recruitment": ["学术讲座", "经验分享", "技术论坛", "分享会", "讲座"],
     "graduate_study": ["招聘", "实习", "竞赛"],
     "exam_certification": [
         "期末",
@@ -311,13 +322,12 @@ CATEGORY_EXCLUDE_KEYWORDS: dict[str, list[str]] = {
         "选课",
         "退课",
         "调课",
-        "考试安排",
-        "考场安排",
-        "成绩查询",
     ],
 }
 
 CATEGORY_SCORE_THRESHOLD = 5
+RULE_DIRECT_SCORE_THRESHOLD = 10
+RULE_DIRECT_MARGIN_THRESHOLD = 6
 CORE_KEYWORD_SCORE = 5
 COMBO_KEYWORD_SCORE = 8
 EXCLUDE_KEYWORD_PENALTY = 5
@@ -440,6 +450,34 @@ class TimeSignals:
     deadline_at: datetime | None
 
 
+@dataclass(slots=True)
+class CategoryScoreDetail:
+    category: str
+    score: int
+    core_hits: list[str]
+    combo_hits: list[str]
+    exclude_hits: list[str]
+
+
+@dataclass(slots=True)
+class CategoryClassificationDecision:
+    category: str
+    confidence: str
+    scores: dict[str, int]
+    top_category: str
+    top_score: int
+    second_category: str
+    second_score: int
+    margin: int
+    matched_keywords: list[str]
+    excluded_keywords: list[str]
+    conflict_categories: list[str]
+
+    @property
+    def is_high_confidence(self) -> bool:
+        return self.confidence == "high"
+
+
 def normalize_whitespace(value: str) -> str:
     return re.sub(r"\s+", " ", value or "").strip()
 
@@ -476,18 +514,40 @@ def _matches_combo_rule(text: str, combo_rule: tuple[list[str], ...]) -> bool:
     return all(_contains_any(text, group) for group in combo_rule)
 
 
-def _score_category_text(text: str, category: str, *, weight: int) -> int:
+def _score_category_text_detail(text: str, category: str, *, weight: int) -> CategoryScoreDetail:
     if not text:
-        return 0
+        return CategoryScoreDetail(category, 0, [], [], [])
     core_hits = _contains_any(text, CATEGORY_CORE_KEYWORDS.get(category, []))
     combo_hits = [rule for rule in CATEGORY_COMBO_RULES.get(category, []) if _matches_combo_rule(text, rule)]
     exclude_hits = _contains_any(text, CATEGORY_EXCLUDE_KEYWORDS.get(category, []))
+    combo_labels = [" + ".join(group[0] for group in rule if group) for rule in combo_hits]
 
     score = len(core_hits) * CORE_KEYWORD_SCORE
     score += len(combo_hits) * COMBO_KEYWORD_SCORE
     if exclude_hits and not (category == "exam_certification" and core_hits):
         score -= len(exclude_hits) * EXCLUDE_KEYWORD_PENALTY
-    return score * weight
+    return CategoryScoreDetail(category, score * weight, core_hits, combo_labels, exclude_hits)
+
+
+def _score_category_text(text: str, category: str, *, weight: int) -> int:
+    return _score_category_text_detail(text, category, weight=weight).score
+
+
+def _merge_score_details(category: str, *details: CategoryScoreDetail) -> CategoryScoreDetail:
+    core_hits: list[str] = []
+    combo_hits: list[str] = []
+    exclude_hits: list[str] = []
+    for detail in details:
+        core_hits.extend(detail.core_hits)
+        combo_hits.extend(detail.combo_hits)
+        exclude_hits.extend(detail.exclude_hits)
+    return CategoryScoreDetail(
+        category=category,
+        score=sum(detail.score for detail in details),
+        core_hits=list(dict.fromkeys(core_hits)),
+        combo_hits=list(dict.fromkeys(combo_hits)),
+        exclude_hits=list(dict.fromkeys(exclude_hits)),
+    )
 
 
 def _quality_signals(text: str) -> dict[str, float | int | str]:
@@ -602,33 +662,112 @@ def prescreen_post(*, title: str, summary: str = "", source_name: str = "", body
     return PrescreenDecision(False)
 
 
-def classify_categories(title: str, summary: str = "", content: str = "") -> list[str]:
+def classify_category_decision(title: str, summary: str = "", content: str = "") -> CategoryClassificationDecision:
     headline_text = normalize_whitespace(f"{title} {summary}")
     content_text = normalize_whitespace((content or "")[:CONTENT_CLASSIFICATION_MAX_CHARS])
     combined_text = normalize_whitespace(f"{headline_text} {content_text}")
-    scores = {}
+    campus_context = _is_campus_activity_context(combined_text)
+    details: dict[str, CategoryScoreDetail] = {}
     for category in CATEGORY_PRIORITY:
-        score = _score_category_text(headline_text, category, weight=2)
-        score += _score_category_text(content_text, category, weight=1)
+        detail = _merge_score_details(
+            category,
+            _score_category_text_detail(headline_text, category, weight=2),
+            _score_category_text_detail(content_text, category, weight=1),
+        )
+        if category == "campus_activity" and campus_context:
+            detail = CategoryScoreDetail(
+                category=category,
+                score=detail.score + COMBO_KEYWORD_SCORE,
+                core_hits=detail.core_hits,
+                combo_hits=list(dict.fromkeys(detail.combo_hits + ["社团招新上下文"])),
+                exclude_hits=[
+                    keyword
+                    for keyword in detail.exclude_hits
+                    if keyword not in {"宣讲会", "讲座", "论坛", "沙龙", "报告会", "公开课", "研讨会", "经验分享"}
+                ],
+            )
         if category == "campus_activity" and _is_off_campus_activity(combined_text):
-            score = 0
-        scores[category] = score
+            detail = CategoryScoreDetail(
+                category=category,
+                score=0,
+                core_hits=detail.core_hits,
+                combo_hits=detail.combo_hits,
+                exclude_hits=detail.exclude_hits,
+            )
+        details[category] = detail
+
+    scores = {category: detail.score for category, detail in details.items()}
 
     if scores["campus_activity"] >= CATEGORY_SCORE_THRESHOLD and any(
         scores[category] >= CATEGORY_SCORE_THRESHOLD
         for category in CATEGORY_PRIORITY
         if category != "campus_activity"
-    ):
+    ) and not campus_context:
         scores["campus_activity"] = 0
+        campus_detail = details["campus_activity"]
+        details["campus_activity"] = CategoryScoreDetail(
+            category="campus_activity",
+            score=0,
+            core_hits=campus_detail.core_hits,
+            combo_hits=campus_detail.combo_hits,
+            exclude_hits=campus_detail.exclude_hits,
+        )
 
-    for category in CATEGORY_PRIORITY:
-        if scores[category] >= CATEGORY_SCORE_THRESHOLD:
-            return [category]
-    return ["other"]
+    ranked_categories = sorted(
+        CATEGORY_PRIORITY,
+        key=lambda category: (-scores[category], CATEGORY_PRIORITY.index(category)),
+    )
+    top_category = ranked_categories[0]
+    second_category = ranked_categories[1] if len(ranked_categories) > 1 else "other"
+    top_score = scores[top_category]
+    second_score = scores.get(second_category, 0)
+    margin = top_score - second_score
+    top_detail = details[top_category]
+    conflict_categories = [
+        category
+        for category in CATEGORY_PRIORITY
+        if category != top_category and scores[category] >= CATEGORY_SCORE_THRESHOLD
+    ]
+
+    is_high_confidence = (
+        top_score >= RULE_DIRECT_SCORE_THRESHOLD
+        and margin >= RULE_DIRECT_MARGIN_THRESHOLD
+        and not top_detail.exclude_hits
+    )
+    category = top_category if is_high_confidence else "other"
+    confidence = "high" if is_high_confidence else "low"
+
+    return CategoryClassificationDecision(
+        category=category,
+        confidence=confidence,
+        scores=scores,
+        top_category=top_category,
+        top_score=top_score,
+        second_category=second_category,
+        second_score=second_score,
+        margin=margin,
+        matched_keywords=list(dict.fromkeys(top_detail.core_hits + top_detail.combo_hits)),
+        excluded_keywords=top_detail.exclude_hits,
+        conflict_categories=conflict_categories,
+    )
+
+
+def classify_categories(title: str, summary: str = "", content: str = "") -> list[str]:
+    decision = classify_category_decision(title, summary, content)
+    return [decision.category]
 
 
 def _is_off_campus_activity(text: str) -> bool:
     return any(loc in text for loc in NON_SHENZHEN_LOCATIONS)
+
+
+def _is_campus_activity_context(text: str) -> bool:
+    return (
+        bool(_contains_any(text, ["社团", "艺术团", "合唱团", "文艺团体"]))
+        and bool(_contains_any(text, ["招新", "纳新"]))
+        and bool(_contains_any(text, ["宣讲", "说明会", "分享会", "活动", "报名"]))
+        and not _contains_any(text, ["竞赛", "大赛", "挑战杯", "数学建模", "招聘", "实习", "岗位", "投递"])
+    )
 
 
 def classify_content_type(title: str, summary: str = "", content: str = "") -> ContentType:

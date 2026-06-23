@@ -11,7 +11,6 @@ router = APIRouter(prefix="/api/sources", tags=["sources"])
 
 
 @router.get("", response_model=list[SourceResponse])
-def list_sources(request: Request, db: Session = Depends(get_db)):
+async def list_sources(request: Request, db: Session = Depends(get_db)):
     sources = request.app.state.query_service.list_sources(db)
     return [serialize_source(source) for source in sources]
-

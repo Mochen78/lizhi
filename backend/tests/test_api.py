@@ -4,10 +4,11 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from fastapi.testclient import TestClient
+import httpx
 
 from app.api.serializers import serialize_post
 from app.application.services.ocr_service import OcrService
+from app.application.services.semantic_category_service import SemanticCategoryDecision
 from app.core.config import Settings
 from app.db.models import Post, PostCategory, PostProjection, Source
 from app.domain.enums import (
@@ -23,6 +24,31 @@ from app.domain.enums import (
 from app.main import create_app
 
 
+class SyncAsgiTestClient:
+    def __init__(self, app):
+        self.app = app
+
+    def get(self, url: str, **kwargs):
+        return asyncio.run(self._request("GET", url, **kwargs))
+
+    def post(self, url: str, **kwargs):
+        return asyncio.run(self._request("POST", url, **kwargs))
+
+    async def _request(self, method: str, url: str, **kwargs):
+        transport = httpx.ASGITransport(app=self.app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            return await client.request(method, url, **kwargs)
+
+
+def future_publish_time(days: int = 1) -> int:
+    return int((datetime.now(timezone.utc) + timedelta(days=days)).timestamp())
+
+
+def future_deadline_text(days: int = 7) -> str:
+    value = datetime.now(timezone.utc) + timedelta(days=days)
+    return f"{value.month}月{value.day}日18:00"
+
+
 class StubConnector:
     async def fetch_sources(self, limit: int) -> list[dict]:
         return [
@@ -35,15 +61,16 @@ class StubConnector:
         ]
 
     async def fetch_posts(self, source_id: str, limit: int) -> list[dict]:
+        deadline = future_deadline_text()
         return [
             {
                 "id": "P001",
                 "title": "讲座报名通知",
-                "description": "面向全校学生开放报名，截止5月28日18:00",
+                "description": f"面向全校学生开放报名，截止{deadline}",
                 "url": "https://example.com/p1",
                 "pic_url": "https://example.com/p1.png",
-                "publish_time": 1780000000,
-                "content_html": "<p>报名入口已经开放，截止5月28日18:00</p>",
+                "publish_time": future_publish_time(1),
+                "content_html": f"<p>报名入口已经开放，截止{deadline}</p>",
             },
             {
                 "id": "P002",
@@ -51,7 +78,7 @@ class StubConnector:
                 "description": "让我们一起回顾本次活动精彩瞬间",
                 "url": "https://example.com/p2",
                 "pic_url": "https://example.com/p2.png",
-                "publish_time": 1780000100,
+                "publish_time": future_publish_time(2),
                 "content_html": "<p>活动现场气氛热烈</p>",
             },
             {
@@ -60,7 +87,7 @@ class StubConnector:
                 "description": "",
                 "url": "https://example.com/p3",
                 "pic_url": "https://example.com/p3.png",
-                "publish_time": 1780000200,
+                "publish_time": future_publish_time(3),
                 "content_html": "<p>@@@</p>",
             },
         ]
@@ -71,19 +98,20 @@ class DetailContentConnector:
         return [{"id": "SRC002", "mp_name": "校园机会中心"}]
 
     async def fetch_posts(self, source_id: str, limit: int) -> list[dict]:
+        deadline = future_deadline_text()
         return [
             {
                 "id": "P004",
                 "title": "讲座报名通知",
-                "description": "面向全校学生开放报名，截止5月28日18:00",
+                "description": f"面向全校学生开放报名，截止{deadline}",
                 "url": "https://example.com/p4",
-                "publish_time": 1780000300,
+                "publish_time": future_publish_time(),
                 "content_html": "",
             }
         ]
 
     async def fetch_post_detail(self, post_id: str) -> dict:
-        return {"content_html": "", "content": "<section>报名入口已经开放，截止5月28日18:00</section>"}
+        return {"content_html": "", "content": f"<section>报名入口已经开放，截止{future_deadline_text()}</section>"}
 
 
 class ImageOnlyConnector:
@@ -97,7 +125,7 @@ class ImageOnlyConnector:
                 "title": "图片推文",
                 "description": "",
                 "url": "https://example.com/ocr",
-                "publish_time": 1780000400,
+                "publish_time": future_publish_time(),
                 "content_html": '<section><img data-src="https://example.com/ocr.jpg" /></section>',
             }
         ]
@@ -111,7 +139,15 @@ class StubOcrClient:
         return self.text
 
 
-def build_test_client(tmp_path: Path) -> TestClient:
+class FixedSemanticCategoryService:
+    def __init__(self, decision: SemanticCategoryDecision):
+        self.decision = decision
+
+    def classify(self, **_kwargs):
+        return self.decision
+
+
+def build_test_client(tmp_path: Path) -> SyncAsgiTestClient:
     settings = Settings(
         database_url=f"sqlite:///{(tmp_path / 'test.db').as_posix()}",
         enable_scheduler=False,
@@ -119,11 +155,11 @@ def build_test_client(tmp_path: Path) -> TestClient:
     )
     app = create_app(settings=settings, connector=StubConnector())
     asyncio.run(app.state.ingestion_service.run_sync(SyncTriggerType.MANUAL))
-    return TestClient(app)
+    return SyncAsgiTestClient(app)
 
 
-def build_empty_test_client(tmp_path: Path) -> TestClient:
-    return TestClient(build_empty_test_app(tmp_path))
+def build_empty_test_client(tmp_path: Path) -> SyncAsgiTestClient:
+    return SyncAsgiTestClient(build_empty_test_app(tmp_path))
 
 
 def build_empty_test_app(tmp_path: Path):
@@ -187,7 +223,7 @@ def test_sync_uses_detail_content_fallback(tmp_path: Path):
     )
     app = create_app(settings=settings, connector=DetailContentConnector())
     asyncio.run(app.state.ingestion_service.run_sync(SyncTriggerType.MANUAL))
-    client = TestClient(app)
+    client = SyncAsgiTestClient(app)
 
     payload = client.get("/api/posts").json()
     assert payload["total"] == 1
@@ -220,6 +256,43 @@ def test_sync_appends_ocr_text_for_image_only_posts(tmp_path: Path):
         assert payload.primary_category == "volunteer"
         assert "volunteer" in payload.categories
         assert "志愿者招募" in items[0].content_text_snapshot
+    finally:
+        db.close()
+
+
+def test_low_confidence_rule_can_use_semantic_category(tmp_path: Path):
+    settings = Settings(
+        database_url=f"sqlite:///{(tmp_path / 'semantic.db').as_posix()}",
+        enable_scheduler=False,
+        llm_enabled=False,
+    )
+    app = create_app(settings=settings, connector=ImageOnlyConnector())
+    app.state.ingestion_service.ocr_service = OcrService(
+        settings,
+        client=StubOcrClient("普通活动 报名入口开放"),
+    )
+    app.state.ingestion_service.semantic_category_service = FixedSemanticCategoryService(
+        SemanticCategoryDecision(
+            category="campus_activity",
+            confidence="high",
+            top_category="campus_activity",
+            top_score=0.76,
+            second_category="other",
+            second_score=0.0,
+            margin=0.76,
+            scores={"campus_activity": 0.76},
+            reason="semantic_confident",
+        )
+    )
+    asyncio.run(app.state.ingestion_service.run_sync(SyncTriggerType.MANUAL))
+
+    db = app.state.session_factory()
+    try:
+        post = db.query(Post).one()
+        assert [(category.category_code, category.category_source) for category in post.categories] == [
+            ("campus_activity", "semantic_high_confidence")
+        ]
+        assert post.projection.primary_category == "campus_activity"
     finally:
         db.close()
 

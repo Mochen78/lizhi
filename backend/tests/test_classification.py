@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from app.application.classification import (
     TimeSignals,
     _validate_llm_output,
+    classify_category_decision,
     classify_categories,
     classify_content_type,
     compute_ranking_score,
@@ -77,9 +78,9 @@ def test_classify_categories_maps_graduate_study():
     assert categories == ["graduate_study"]
 
 
-def test_classify_categories_prioritizes_lecture_before_graduate_study():
+def test_classify_categories_prioritizes_graduate_study_for_exam_talk():
     categories = classify_categories("考研讲座报名", "研究生升学经验分享")
-    assert categories == ["lecture"]
+    assert categories == ["graduate_study"]
 
 
 def test_classify_categories_maps_exam_certification():
@@ -97,6 +98,12 @@ def test_classify_categories_excludes_school_exam_notice():
     assert categories == ["other"]
 
 
+def test_classify_categories_keeps_certification_exam_arrangement():
+    assert classify_categories("四六级考试安排通知", "请按要求完成报名") == ["exam_certification"]
+    assert classify_categories("普通话测试考场安排", "请考生提前打印准考证") == ["exam_certification"]
+    assert classify_categories("教师资格证成绩查询通知", "教师资格考试成绩查询入口开放") == ["exam_certification"]
+
+
 def test_classify_categories_maps_campus_activity():
     categories = classify_categories("社团招新活动报名", "面向全校同学")
     assert categories == ["campus_activity"]
@@ -105,6 +112,21 @@ def test_classify_categories_maps_campus_activity():
 def test_classify_categories_uses_other_for_notice_only():
     categories = classify_categories("停水停电温馨提醒", "请各位同学提前做好准备")
     assert categories == ["other"]
+
+
+def test_classify_category_decision_marks_notice_as_low_confidence():
+    decision = classify_category_decision("停水停电温馨提醒", "请各位同学提前做好准备")
+    assert decision.category == "other"
+    assert decision.confidence == "low"
+    assert decision.top_score == 0
+
+
+def test_classify_category_decision_requires_clear_margin():
+    decision = classify_category_decision("公益讲座", "")
+    assert decision.category == "other"
+    assert decision.confidence == "low"
+    assert decision.top_category in {"lecture", "volunteer"}
+    assert decision.margin < 6
 
 
 def test_classify_categories_uses_content_when_headline_is_ambiguous():
@@ -142,6 +164,17 @@ def test_classify_categories_excludes_recruitment_from_campus_activity():
     assert categories == ["recruitment"]
 
 
+def test_classify_categories_keeps_employment_sharing_as_lecture():
+    assert classify_categories("就业分享会报名", "校友分享就业经验") == ["lecture"]
+    assert classify_categories("职业规划分享会", "面向全校同学开放报名") == ["lecture"]
+    assert classify_categories("求职经验分享会", "学长学姐分享简历和面试经验") == ["lecture"]
+
+
+def test_classify_categories_keeps_enterprise_recruitment():
+    assert classify_categories("企业校园招聘宣讲会", "岗位投递开放") == ["recruitment"]
+    assert classify_categories("实习岗位招聘", "简历投递开放") == ["recruitment"]
+
+
 def test_classify_categories_excludes_internship_from_campus_activity():
     categories = classify_categories("社团招新实习岗位", "简历投递开放")
     assert categories == ["recruitment"]
@@ -155,6 +188,12 @@ def test_classify_categories_excludes_competition_from_student_activity():
 def test_classify_categories_keeps_field_practice_as_campus_activity_without_other_signals():
     categories = classify_categories("外出实践活动报名", "学生组织开展文化交流活动")
     assert categories == ["campus_activity"]
+
+
+def test_classify_categories_keeps_club_recruitment_talk_as_campus_activity():
+    assert classify_categories("社团招新宣讲", "面向全校同学报名") == ["campus_activity"]
+    assert classify_categories("艺术团招新说明会", "欢迎同学报名参加") == ["campus_activity"]
+    assert classify_categories("合唱团招新分享会", "排练演出部招新报名") == ["campus_activity"]
 
 
 def test_classify_content_type_actionable_for_opportunity():

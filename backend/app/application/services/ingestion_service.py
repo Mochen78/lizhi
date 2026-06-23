@@ -14,7 +14,7 @@ from app.application.classification import (
     PRESCREEN_RULE_VERSION,
     TimeSignals,
     build_summary,
-    classify_categories,
+    classify_category_decision,
     classify_content_type,
     compute_content_hash,
     compute_ranking_score,
@@ -34,6 +34,7 @@ from app.application.classification import (
     VALID_CATEGORIES,
 )
 from app.application.services.ocr_service import OcrService
+from app.application.services.semantic_category_service import SemanticCategoryService
 from app.db.models import DiscardedPost, LlmTask, Post, PostCategory, PostProjection, RawPayload, Source, SyncJob, SyncJobItem
 from app.domain.enums import (
     ContentStatus,
@@ -97,6 +98,7 @@ class IngestionService:
         self.connector = connector
         self.settings = settings
         self.ocr_service = ocr_service or OcrService(settings, session_factory=session_factory)
+        self.semantic_category_service = SemanticCategoryService(settings)
         self._lock = asyncio.Lock()
 
     async def run_sync(self, trigger_type: SyncTriggerType) -> SyncJob:
@@ -619,13 +621,35 @@ class IngestionService:
         db.add(post)
         db.flush()
 
-        categories = normalize_category_list(classify_categories(post.title, post.summary, content_text))
+        category_decision = classify_category_decision(post.title, post.summary, content_text)
+        categories = normalize_category_list([category_decision.category])
+        semantic_decision = None
+        if not category_decision.is_high_confidence:
+            semantic_decision = self.semantic_category_service.classify(
+                title=post.title,
+                summary=post.summary,
+                content=content_text,
+            )
+            if semantic_decision.is_high_confidence:
+                categories = normalize_category_list([semantic_decision.category])
         # Prefer LLM category over rule-based for both filtering and display
         llm_structured = llm_result.get("structured") or {}
         llm_cat = llm_structured.get("category", "")
         if llm_cat in VALID_CATEGORIES:
             categories = [canonical_category(llm_cat)]
-        category_source = "llm" if llm_cat in VALID_CATEGORIES else "rule_engine"
+        category_source = (
+            "llm"
+            if llm_cat in VALID_CATEGORIES
+            else (
+                "rule_engine_high_confidence"
+                if category_decision.is_high_confidence
+                else (
+                    "semantic_high_confidence"
+                    if semantic_decision is not None and semantic_decision.is_high_confidence
+                    else "rule_engine_low_confidence"
+                )
+            )
+        )
         db.query(PostCategory).filter(PostCategory.post_id == post.id).delete()
         db.flush()
         post.categories = [

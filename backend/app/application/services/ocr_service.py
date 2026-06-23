@@ -112,6 +112,13 @@ def current_ocr_month_key() -> str:
     return datetime.now(ZoneInfo("Asia/Shanghai")).strftime("%Y-%m")
 
 
+def selected_action_fallback_label(action: str) -> str:
+    # When both primary and fallback models are exhausted, the cache row has no
+    # single action to attribute; keep the primary label so the record stays
+    # consistent with prior monthly-limit rows.
+    return action
+
+
 def _extract_recognize_agent_lines(payload: dict) -> list[str]:
     response_items = payload.get("Response") or []
     if isinstance(response_items, dict):
@@ -251,27 +258,27 @@ class OcrService:
         if self.settings.ocr_provider.lower() != "tencent":
             _logger.warning("unsupported OCR provider: %s", self.settings.ocr_provider)
             return "", 0
-        action = normalize_whitespace(self.settings.ocr_action) or "RecognizeAgent"
-        if action not in SUPPORTED_OCR_ACTIONS:
-            _logger.warning("unsupported OCR action: %s", action)
+        primary_action = normalize_whitespace(self.settings.ocr_action) or OCR_ACTION_GENERAL_ACCURATE
+        if primary_action not in SUPPORTED_OCR_ACTIONS:
+            _logger.warning("unsupported OCR action: %s", primary_action)
             return "", 0
 
         if self.session_factory is None:
-            return self._recognize_images_without_cache(image_urls)
+            return self._recognize_images_without_cache(image_urls, action=primary_action)
 
         db = self.session_factory()
         try:
             return self._recognize_images_with_cache(
                 db,
                 image_urls,
-                action=action,
+                action=primary_action,
                 post_id=post_id,
                 upstream_post_id=upstream_post_id,
             )
         finally:
             db.close()
 
-    def _recognize_images_without_cache(self, image_urls: list[str]) -> tuple[str, int]:
+    def _recognize_images_without_cache(self, image_urls: list[str], *, action: str = "") -> tuple[str, int]:
         client = self._get_client()
         if client is None:
             return "", 0
@@ -280,7 +287,7 @@ class OcrService:
         processed_count = 0
         for image_url in image_urls:
             try:
-                image_text = client.recognize_image_url(image_url)
+                image_text = client.recognize_image_url(image_url, action=action or None)
             except Exception as exc:  # noqa: BLE001
                 _logger.warning("OCR failed for image %s: %s", image_url, exc)
                 continue
@@ -303,7 +310,7 @@ class OcrService:
         client: OcrClient | None = None
         for image_url in image_urls:
             image_hash = hash_image_url(image_url)
-            cached = self._find_cache_row(db, image_hash, action)
+            cached = self._find_any_success_cache(db, image_hash)
             if cached and cached.status == OCR_STATUS_SUCCESS:
                 if normalize_whitespace(cached.ocr_text):
                     text_parts.append(cached.ocr_text)
@@ -311,12 +318,13 @@ class OcrService:
                 continue
 
             month_key = current_ocr_month_key()
-            if self._monthly_usage_count(db, month_key) >= max(self.settings.ocr_monthly_limit, 0):
+            selected_action = self._select_action_with_quota(db, month_key, primary=action)
+            if selected_action is None:
                 self._record_cache_row(
                     db,
                     image_hash=image_hash,
                     image_url=image_url,
-                    action=action,
+                    action=selected_action_fallback_label(action),
                     status=OCR_STATUS_SKIPPED_LIMIT,
                     month_key=month_key,
                     post_id=post_id,
@@ -332,14 +340,14 @@ class OcrService:
                 return normalize_whitespace(" ".join(text_parts)), processed_count
 
             try:
-                image_text = client.recognize_image_url(image_url)
+                image_text = client.recognize_image_url(image_url, action=selected_action)
             except Exception as exc:  # noqa: BLE001
                 _logger.warning("OCR failed for image %s: %s", image_url, exc)
                 self._record_usage_log(
                     db,
                     image_hash=image_hash,
                     image_url=image_url,
-                    action=action,
+                    action=selected_action,
                     status=OCR_STATUS_FAILED,
                     month_key=month_key,
                     post_id=post_id,
@@ -350,7 +358,7 @@ class OcrService:
                     db,
                     image_hash=image_hash,
                     image_url=image_url,
-                    action=action,
+                    action=selected_action,
                     status=OCR_STATUS_FAILED,
                     month_key=month_key,
                     post_id=post_id,
@@ -365,7 +373,7 @@ class OcrService:
                 db,
                 image_hash=image_hash,
                 image_url=image_url,
-                action=action,
+                action=selected_action,
                 status=OCR_STATUS_SUCCESS,
                 month_key=month_key,
                 post_id=post_id,
@@ -375,7 +383,7 @@ class OcrService:
                 db,
                 image_hash=image_hash,
                 image_url=image_url,
-                action=action,
+                action=selected_action,
                 status=OCR_STATUS_SUCCESS,
                 month_key=month_key,
                 post_id=post_id,
@@ -397,19 +405,19 @@ class OcrService:
             _logger.warning("OCR client initialization failed: %s", exc)
             return None
 
-    def _find_cache_row(self, db: Session, image_hash: str, action: str) -> OcrImageCache | None:
+    def _find_any_success_cache(self, db: Session, image_hash: str) -> OcrImageCache | None:
         if not self.settings.ocr_cache_enabled:
             return None
         return (
             db.query(OcrImageCache)
             .filter(
                 OcrImageCache.image_url_hash == image_hash,
-                OcrImageCache.ocr_action == action,
+                OcrImageCache.status == OCR_STATUS_SUCCESS,
             )
             .first()
         )
 
-    def _monthly_usage_count(self, db: Session, month_key: str) -> int:
+    def _monthly_usage_count(self, db: Session, month_key: str, action: str) -> int:
         statuses = [OCR_STATUS_SUCCESS]
         if self.settings.ocr_count_failed_attempts:
             statuses.append(OCR_STATUS_FAILED)
@@ -418,10 +426,29 @@ class OcrService:
             .filter(
                 OcrUsageLog.month_key == month_key,
                 OcrUsageLog.status.in_(statuses),
+                OcrUsageLog.ocr_action == action,
             )
             .scalar()
             or 0
         )
+
+    def _select_action_with_quota(self, db: Session, month_key: str, *, primary: str) -> str | None:
+        # Try the primary model first, then the configured fallback. Returns the
+        # first action whose monthly usage is still under its own limit, or None
+        # when every configured action is exhausted.
+        candidates = [primary]
+        fallback = normalize_whitespace(self.settings.ocr_fallback_action)
+        if fallback and fallback in SUPPORTED_OCR_ACTIONS and fallback != primary:
+            candidates.append(fallback)
+        for index, candidate in enumerate(dict.fromkeys(candidates)):
+            limit = (
+                self.settings.ocr_fallback_monthly_limit
+                if index > 0
+                else self.settings.ocr_monthly_limit
+            )
+            if self._monthly_usage_count(db, month_key, candidate) < max(limit, 0):
+                return candidate
+        return None
 
     def _record_usage_log(
         self,

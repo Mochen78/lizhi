@@ -56,7 +56,7 @@ def _queue(request: Request) -> JobQueueService:
 
 
 @router.post("/refresh", response_model=JobCreateResponse)
-def create_refresh_jobs(request: Request, payload: RefreshJobRequest | None = None):
+async def create_refresh_jobs(request: Request, payload: RefreshJobRequest | None = None):
     payload = payload or RefreshJobRequest()
     queue = _queue(request)
     settings = request.app.state.settings
@@ -87,7 +87,7 @@ def create_refresh_jobs(request: Request, payload: RefreshJobRequest | None = No
 
 
 @router.post("/backfill", response_model=JobCreateResponse)
-def create_backfill_jobs(request: Request, payload: BackfillJobRequest | None = None):
+async def create_backfill_jobs(request: Request, payload: BackfillJobRequest | None = None):
     payload = payload or BackfillJobRequest()
     queue = _queue(request)
     settings = request.app.state.settings
@@ -113,12 +113,12 @@ def create_backfill_jobs(request: Request, payload: BackfillJobRequest | None = 
 
 
 @router.get("/summary", response_model=JobSummaryResponse)
-def get_job_summary(request: Request):
+async def get_job_summary(request: Request):
     return JobSummaryResponse(**_queue(request).summary())
 
 
 @router.get("/ingestion-health")
-def get_ingestion_health(request: Request):
+async def get_ingestion_health(request: Request):
     db = request.app.state.session_factory()
     try:
         since = datetime.now(timezone.utc) - timedelta(hours=24)
@@ -206,7 +206,7 @@ def get_ingestion_health(request: Request):
 
 
 @router.get("/{job_id}", response_model=JobResponse)
-def get_job(job_id: int, request: Request):
+async def get_job(job_id: int, request: Request):
     job = _queue(request).get(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="job not found")

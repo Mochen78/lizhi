@@ -9,7 +9,7 @@ router = APIRouter(prefix="/api", tags=["health"])
 
 
 @router.get("/health", response_model=HealthResponse)
-def health(request: Request):
+async def health(request: Request):
     db = request.app.state.session_factory()
     try:
         db.execute(text("SELECT 1"))
@@ -25,4 +25,3 @@ def health(request: Request):
         database=database,
         upstream_configured=bool(settings.upstream_base_url),
     )
-

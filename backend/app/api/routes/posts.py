@@ -11,7 +11,7 @@ router = APIRouter(prefix="/api/posts", tags=["posts"])
 
 
 @router.get("", response_model=PagedPostsResponse)
-def list_posts(
+async def list_posts(
     request: Request,
     category: str = Query(default=""),
     subcategory: str = Query(default=""),
@@ -47,7 +47,7 @@ def list_posts(
 
 
 @router.get("/categories", response_model=CategoryStatsResponse)
-def category_stats(request: Request, db: Session = Depends(get_db)):
+async def category_stats(request: Request, db: Session = Depends(get_db)):
     (
         categories,
         content_type_stats,
@@ -65,7 +65,7 @@ def category_stats(request: Request, db: Session = Depends(get_db)):
 
 
 @router.get("/{post_id}", response_model=PostDetailResponse)
-def get_post(request: Request, post_id: int, db: Session = Depends(get_db)):
+async def get_post(request: Request, post_id: int, db: Session = Depends(get_db)):
     post = request.app.state.query_service.get_post(db, post_id)
     if post is None:
         raise HTTPException(status_code=404, detail="post not found")

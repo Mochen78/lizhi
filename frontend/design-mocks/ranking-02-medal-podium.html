@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>荔知 · 排行榜样式 02 · 奖牌榜</title>
+<style>
+:root {
+  --bg: #f0f7ed;
+  --card: #fff;
+  --line: #c8dcc3;
+  --text: #2d3a29;
+  --muted: #6b7a66;
+  --primary: #5a8f5c;
+  --accent: #e8743f;
+  --gold: #d99b24;
+  --silver: #86939b;
+  --bronze: #b46b36;
+  --title-font: "ZCOOL XiaoWei", "STKaiti", serif;
+  --body-font: "LXGW WenKai TC", "PingFang SC", sans-serif;
+  --tag-font: "Nunito", Arial, sans-serif;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: var(--text);
+  font-family: var(--body-font);
+  background:
+    radial-gradient(circle at 20% 20%, rgba(90, 143, 92, 0.14), transparent 32%),
+    radial-gradient(circle at 75% 82%, rgba(232, 116, 63, 0.12), transparent 35%),
+    var(--bg);
+}
+main {
+  width: min(1060px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 40px 0;
+}
+.ranking {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 16px 42px rgba(45, 58, 41, 0.11);
+  padding: 24px;
+}
+.head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 22px;
+}
+h1 {
+  margin: 0 0 8px;
+  color: var(--primary);
+  font-family: var(--title-font);
+  font-size: 28px;
+}
+.desc, .updated, .meta {
+  color: var(--muted);
+  font-family: var(--tag-font);
+  font-size: 13px;
+}
+.updated { white-space: nowrap; margin-top: 8px; }
+.podium {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  align-items: end;
+  margin-bottom: 14px;
+}
+.top-card {
+  position: relative;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 52px 18px 18px;
+  min-height: 190px;
+}
+.top-card.first { min-height: 228px; border-color: rgba(217, 155, 36, 0.55); }
+.medal {
+  position: absolute;
+  top: 16px;
+  left: 18px;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-family: var(--tag-font);
+  font-weight: 900;
+}
+.first .medal { background: var(--gold); }
+.second .medal { background: var(--silver); }
+.third .medal { background: var(--bronze); }
+.top-card h2, .item h2 {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.35;
+}
+.top-card h2 { margin-bottom: 12px; }
+.tag {
+  display: inline-flex;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: rgba(90, 143, 92, 0.12);
+  color: var(--primary);
+  font-family: var(--tag-font);
+  font-size: 12px;
+  font-weight: 900;
+}
+.heat {
+  margin-top: 18px;
+  color: var(--accent);
+  font-family: var(--tag-font);
+  font-size: 26px;
+  font-weight: 900;
+}
+.heat small {
+  margin-left: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.rest {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.item {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.84);
+  padding: 14px;
+}
+.rank {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: rgba(90, 143, 92, 0.1);
+  color: var(--primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--tag-font);
+  font-weight: 900;
+}
+.item .heat { margin: 0; font-size: 20px; }
+@media (max-width: 760px) {
+  main { width: min(100% - 20px, 1060px); padding: 20px 0; }
+  .ranking { padding: 18px; }
+  .head { flex-direction: column; }
+  .podium, .rest { grid-template-columns: 1fr; }
+  .top-card, .top-card.first { min-height: auto; }
+  .item { grid-template-columns: 38px minmax(0, 1fr); }
+  .item .heat { grid-column: 2; }
+}
+</style>
+</head>
+<body>
+<main>
+  <section class="ranking" aria-label="热门活动排行榜">
+    <header class="head">
+      <div>
+        <h1>热门活动排行榜</h1>
+        <div class="desc">奖牌榜 · 前三名突出，适合强调热门活动荣誉感</div>
+      </div>
+      <div class="updated">更新于 2026-06-08 14:30</div>
+    </header>
+    <div class="podium">
+      <article class="top-card second">
+        <div class="medal">2</div>
+        <h2>华为校园招聘宣讲会</h2>
+        <div class="meta"><span class="tag">就业招聘</span> 活动 06-10</div>
+        <div class="heat">91<small>热度</small></div>
+      </article>
+      <article class="top-card first">
+        <div class="medal">1</div>
+        <h2>校园文化节志愿者招募</h2>
+        <div class="meta"><span class="tag">志愿公益</span> 截止 06-12</div>
+        <div class="heat">96<small>热度</small></div>
+      </article>
+      <article class="top-card third">
+        <div class="medal">3</div>
+        <h2>粤港澳创新创业大赛报名</h2>
+        <div class="meta"><span class="tag">学科竞赛</span> 截止 06-18</div>
+        <div class="heat">88<small>热度</small></div>
+      </article>
+    </div>
+    <div class="rest">
+      <article class="item">
+        <div class="rank">4</div>
+        <div>
+          <h2>AI 学术讲座：大模型与教育</h2>
+          <div class="meta"><span class="tag">讲座论坛</span> 活动 06-13</div>
+        </div>
+        <div class="heat">84</div>
+      </article>
+      <article class="item">
+        <div class="rank">5</div>
+        <div>
+          <h2>留学申请经验分享会</h2>
+          <div class="meta"><span class="tag">升学留学</span> 活动 06-15</div>
+        </div>
+        <div class="heat">79</div>
+      </article>
+    </div>
+  </section>
+</main>
+</body>
+</html>

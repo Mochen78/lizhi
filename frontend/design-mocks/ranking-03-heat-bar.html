@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>荔知 · 排行榜样式 03 · 热力榜</title>
+<style>
+:root {
+  --bg: #f0f7ed;
+  --card: #fff;
+  --line: #c8dcc3;
+  --text: #2d3a29;
+  --muted: #6b7a66;
+  --primary: #5a8f5c;
+  --accent: #e8743f;
+  --title-font: "ZCOOL XiaoWei", "STKaiti", serif;
+  --body-font: "LXGW WenKai TC", "PingFang SC", sans-serif;
+  --tag-font: "Nunito", Arial, sans-serif;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: var(--text);
+  font-family: var(--body-font);
+  background:
+    radial-gradient(ellipse at 10% 15%, rgba(90, 143, 92, 0.14), transparent 60%),
+    radial-gradient(ellipse at 86% 76%, rgba(232, 116, 63, 0.13), transparent 60%),
+    var(--bg);
+}
+main {
+  width: min(1040px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 42px 0;
+}
+.ranking {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 16px 42px rgba(45, 58, 41, 0.1);
+  padding: 24px;
+}
+.head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+h1 {
+  margin: 0 0 8px;
+  color: var(--primary);
+  font-family: var(--title-font);
+  font-size: 28px;
+}
+.sub, .updated, .meta {
+  color: var(--muted);
+  font-family: var(--tag-font);
+  font-size: 13px;
+}
+.updated { white-space: nowrap; margin-top: 8px; }
+.chart {
+  display: grid;
+  gap: 12px;
+}
+.row {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) 66px;
+  gap: 14px;
+  align-items: center;
+  border: 1px solid rgba(200, 220, 195, 0.8);
+  border-radius: 8px;
+  background: #fff;
+  padding: 14px;
+}
+.rank {
+  color: var(--primary);
+  font-family: var(--tag-font);
+  font-size: 18px;
+  font-weight: 900;
+}
+.title-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 9px;
+}
+h2 {
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.35;
+}
+.tag {
+  flex: 0 0 auto;
+  height: 22px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: rgba(90, 143, 92, 0.12);
+  color: var(--primary);
+  font-family: var(--tag-font);
+  font-size: 12px;
+  font-weight: 900;
+}
+.bar {
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(90, 143, 92, 0.12);
+  overflow: hidden;
+}
+.fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--primary), var(--accent));
+}
+.heat {
+  text-align: right;
+  color: var(--accent);
+  font-family: var(--tag-font);
+  font-size: 24px;
+  font-weight: 900;
+}
+.heat span {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+}
+@media (max-width: 720px) {
+  main { width: min(100% - 20px, 1040px); padding: 20px 0; }
+  .ranking { padding: 18px; }
+  .head, .title-line { flex-direction: column; }
+  .row { grid-template-columns: 34px minmax(0, 1fr); }
+  .heat { grid-column: 2; text-align: left; font-size: 20px; }
+}
+</style>
+</head>
+<body>
+<main>
+  <section class="ranking" aria-label="热门活动排行榜">
+    <header class="head">
+      <div>
+        <h1>热门活动排行榜</h1>
+        <div class="sub">热力榜 · 用进度条展示热门程度，便于快速比较</div>
+      </div>
+      <div class="updated">更新于 2026-06-08 14:30</div>
+    </header>
+    <div class="chart">
+      <article class="row">
+        <div class="rank">01</div>
+        <div>
+          <div class="title-line"><h2>校园文化节志愿者招募</h2><span class="tag">志愿公益 · 截止 06-12</span></div>
+          <div class="bar"><div class="fill" style="width:96%"></div></div>
+        </div>
+        <div class="heat">96<span>热度</span></div>
+      </article>
+      <article class="row">
+        <div class="rank">02</div>
+        <div>
+          <div class="title-line"><h2>华为校园招聘宣讲会</h2><span class="tag">就业招聘 · 活动 06-10</span></div>
+          <div class="bar"><div class="fill" style="width:91%"></div></div>
+        </div>
+        <div class="heat">91<span>热度</span></div>
+      </article>
+      <article class="row">
+        <div class="rank">03</div>
+        <div>
+          <div class="title-line"><h2>粤港澳创新创业大赛报名</h2><span class="tag">学科竞赛 · 截止 06-18</span></div>
+          <div class="bar"><div class="fill" style="width:88%"></div></div>
+        </div>
+        <div class="heat">88<span>热度</span></div>
+      </article>
+      <article class="row">
+        <div class="rank">04</div>
+        <div>
+          <div class="title-line"><h2>AI 学术讲座：大模型与教育</h2><span class="tag">讲座论坛 · 活动 06-13</span></div>
+          <div class="bar"><div class="fill" style="width:84%"></div></div>
+        </div>
+        <div class="heat">84<span>热度</span></div>
+      </article>
+      <article class="row">
+        <div class="rank">05</div>
+        <div>
+          <div class="title-line"><h2>留学申请经验分享会</h2><span class="tag">升学留学 · 活动 06-15</span></div>
+          <div class="bar"><div class="fill" style="width:79%"></div></div>
+        </div>
+        <div class="heat">79<span>热度</span></div>
+      </article>
+    </div>
+  </section>
+</main>
+</body>
+</html>

@@ -71,6 +71,7 @@ def main() -> None:
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--model", default=DEFAULT_MODEL)
     parser.add_argument("--max-chars", type=int, default=240)
+    parser.add_argument("--name", default="")
     args = parser.parse_args()
 
     text = args.input.read_text(encoding="utf-8")
@@ -92,7 +93,7 @@ def main() -> None:
     probe_scores = (probe_embeddings @ centroid).tolist()
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    stem = args.input.stem
+    stem = args.name or args.input.stem
     vector_path = args.output_dir / f"{stem}_centroid.npy"
     chunks_path = args.output_dir / f"{stem}_chunks.json"
     meta_path = args.output_dir / f"{stem}_meta.json"

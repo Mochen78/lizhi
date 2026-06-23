@@ -28,7 +28,7 @@ async def manual_sync(request: Request):
 
 
 @router.get("/jobs/{job_id}", response_model=SyncJobResponse)
-def get_sync_job(request: Request, job_id: int):
+async def get_sync_job(request: Request, job_id: int):
     db: Session = request.app.state.session_factory()
     try:
         job = request.app.state.query_service.get_sync_job(db, job_id)
@@ -40,7 +40,7 @@ def get_sync_job(request: Request, job_id: int):
 
 
 @router.get("/llm-queue")
-def get_llm_queue_status(request: Request):
+async def get_llm_queue_status(request: Request):
     db: Session = request.app.state.session_factory()
     try:
         rows = (

@@ -1,15 +1,14 @@
 from __future__ import annotations
 
-from collections.abc import Generator
+from collections.abc import AsyncGenerator
 
 from fastapi import Request
 from sqlalchemy.orm import Session
 
 
-def get_db(request: Request) -> Generator[Session, None, None]:
+async def get_db(request: Request) -> AsyncGenerator[Session, None]:
     db = request.app.state.session_factory()
     try:
         yield db
     finally:
         db.close()
-

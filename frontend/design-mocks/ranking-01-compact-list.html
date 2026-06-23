@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>荔知 · 排行榜样式 01 · 清单榜</title>
+<style>
+:root {
+  --bg: #f0f7ed;
+  --card: #ffffff;
+  --line: #c8dcc3;
+  --text: #2d3a29;
+  --muted: #6b7a66;
+  --primary: #5a8f5c;
+  --accent: #e8743f;
+  --hot: #cf3f36;
+  --soft: #e8f5e9;
+  --shadow: 0 14px 38px rgba(45, 58, 41, 0.1);
+  --title-font: "ZCOOL XiaoWei", "STKaiti", serif;
+  --body-font: "LXGW WenKai TC", "PingFang SC", sans-serif;
+  --tag-font: "Nunito", Arial, sans-serif;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: var(--body-font);
+  color: var(--text);
+  background:
+    radial-gradient(ellipse at 15% 18%, rgba(90, 143, 92, 0.16), transparent 58%),
+    radial-gradient(ellipse at 86% 82%, rgba(232, 116, 63, 0.11), transparent 58%),
+    var(--bg);
+}
+main {
+  width: min(980px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 42px 0;
+}
+.ranking {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.ranking-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 22px 24px 18px;
+  border-bottom: 1px solid var(--line);
+}
+h1 {
+  margin: 0;
+  font-family: var(--title-font);
+  font-size: 26px;
+  color: var(--primary);
+  letter-spacing: 1px;
+}
+.updated {
+  color: var(--muted);
+  font-family: var(--tag-font);
+  font-size: 13px;
+  white-space: nowrap;
+}
+.list {
+  display: grid;
+  gap: 0;
+}
+.row {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) 120px;
+  align-items: center;
+  gap: 14px;
+  padding: 18px 24px;
+  border-bottom: 1px solid rgba(200, 220, 195, 0.72);
+}
+.row:last-child { border-bottom: 0; }
+.rank {
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--soft);
+  color: var(--primary);
+  font-family: var(--tag-font);
+  font-weight: 900;
+}
+.row:first-child .rank {
+  background: var(--accent);
+  color: #fff;
+}
+.title {
+  margin: 0 0 8px;
+  font-size: 17px;
+  line-height: 1.35;
+}
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--muted);
+  font-family: var(--tag-font);
+  font-size: 12px;
+}
+.tag {
+  border-radius: 999px;
+  padding: 2px 9px;
+  background: rgba(90, 143, 92, 0.12);
+  color: var(--primary);
+  font-weight: 800;
+}
+.heat {
+  text-align: right;
+  font-family: var(--tag-font);
+  color: var(--hot);
+  font-weight: 900;
+}
+.heat span {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+@media (max-width: 680px) {
+  main { width: min(100% - 20px, 980px); padding: 20px 0; }
+  .ranking-head { align-items: flex-start; flex-direction: column; padding: 18px; }
+  .row {
+    grid-template-columns: 42px minmax(0, 1fr);
+    padding: 16px 18px;
+  }
+  .heat {
+    grid-column: 2;
+    text-align: left;
+  }
+}
+</style>
+</head>
+<body>
+<main>
+  <section class="ranking" aria-label="热门活动排行榜">
+    <header class="ranking-head">
+      <div>
+        <h1>热门活动排行榜</h1>
+        <div class="meta" style="margin-top:8px">清单榜 · 信息密度高，适合直接嵌入首页</div>
+      </div>
+      <div class="updated">更新于 2026-06-08 14:30</div>
+    </header>
+    <div class="list">
+      <article class="row">
+        <div class="rank">1</div>
+        <div>
+          <h2 class="title">校园文化节志愿者招募</h2>
+          <div class="meta"><span class="tag">志愿公益</span><span>截止 06-12</span><span>学生会</span></div>
+        </div>
+        <div class="heat">96<span>热度</span></div>
+      </article>
+      <article class="row">
+        <div class="rank">2</div>
+        <div>
+          <h2 class="title">华为校园招聘宣讲会</h2>
+          <div class="meta"><span class="tag">就业招聘</span><span>活动 06-10</span><span>就业中心</span></div>
+        </div>
+        <div class="heat">91<span>热度</span></div>
+      </article>
+      <article class="row">
+        <div class="rank">3</div>
+        <div>
+          <h2 class="title">粤港澳创新创业大赛报名</h2>
+          <div class="meta"><span class="tag">学科竞赛</span><span>截止 06-18</span><span>创新创业学院</span></div>
+        </div>
+        <div class="heat">88<span>热度</span></div>
+      </article>
+      <article class="row">
+        <div class="rank">4</div>
+        <div>
+          <h2 class="title">AI 学术讲座：大模型与教育</h2>
+          <div class="meta"><span class="tag">讲座论坛</span><span>活动 06-13</span><span>计算机学院</span></div>
+        </div>
+        <div class="heat">84<span>热度</span></div>
+      </article>
+      <article class="row">
+        <div class="rank">5</div>
+        <div>
+          <h2 class="title">留学申请经验分享会</h2>
+          <div class="meta"><span class="tag">升学留学</span><span>活动 06-15</span><span>国际交流处</span></div>
+        </div>
+        <div class="heat">79<span>热度</span></div>
+      </article>
+    </div>
+  </section>
+</main>
+</body>
+</html>
