@@ -19,10 +19,15 @@
       </div>
 
       <nav class="sidebar-nav" aria-label="后台状态导航">
-        <a v-for="item in navItems" :key="item.id" :href="'#' + item.id" :class="{ active: activeSection === item.id }" @click.prevent="scrollTo(item.id)">
+        <a v-for="item in navItems" :key="item.id" :href="'#' + item.id" :class="{ active: activeView === 'dashboard' && activeSection === item.id }" @click.prevent="scrollTo(item.id)">
           {{ item.label }}
         </a>
       </nav>
+
+      <div class="sidebar-module">
+        <span class="sidebar-module-label">反馈管理</span>
+        <a href="#" :class="{ active: activeView === 'feedback' }" @click.prevent="goToFeedback">用户反馈</a>
+      </div>
 
       <div class="sidebar-footer">
         <span class="conn-dot" :class="healthTone"></span>
@@ -33,8 +38,8 @@
     <main class="main">
       <header class="page-header">
         <div>
-          <h1>荔知后台状态看板</h1>
-          <p>真实 API 数据，每 30 秒自动刷新</p>
+          <h1>{{ activeView === 'feedback' ? '用户反馈管理' : '荔知后台状态看板' }}</h1>
+          <p>{{ activeView === 'feedback' ? '用户对内容的反馈记录与统计' : '真实 API 数据，每 30 秒自动刷新' }}</p>
         </div>
         <div class="header-meta">
           <span class="status-badge" :class="healthTone"><span class="dot"></span>{{ healthLabel }}</span>
@@ -43,6 +48,7 @@
       </header>
 
       <div class="content">
+        <template v-if="activeView === 'dashboard'">
         <section id="overview" class="section">
           <div class="section-title">总览</div>
           <div class="kpi-row">
@@ -177,8 +183,109 @@
               </tbody>
             </table>
           </div>
+       </section>
+
+        </template>
+        <template v-if="activeView === 'feedback'">
+          <button class="fb-back-btn" @click="backToDashboard">← 返回看板</button>
+        <section id="feedback" class="section fb-section">
+          <div class="section-title fb-section-title">用户反馈</div>
+
+          <!-- Summary by category -->
+          <div class="card table-card">
+            <div class="card-head">按分类汇总</div>
+            <table class="data-table">
+              <thead>
+                <tr><th>分类</th><th class="num">有用</th><th class="num">没用</th><th class="num">反馈</th><th class="num">合计</th><th class="fb-reason-col">主要原因</th></tr>
+              </thead>
+              <tbody>
+                <tr v-for="item in feedbackSummary" :key="item.category">
+                  <td>{{ categoryLabel(item.category) }}</td>
+                  <td class="num fb-useful">{{ formatNumber(item.useful) }}</td>
+                  <td class="num fb-useless">{{ formatNumber(item.useless) }}</td>
+                  <td class="num">{{ formatNumber(item.feedback) }}</td>
+                  <td class="num">{{ formatNumber(item.useful + item.useless + item.feedback) }}</td>
+                  <td class="fb-reason-cell">{{ topReason(item.reasons) }}</td>
+                </tr>
+                <tr v-if="!feedbackSummary.length"><td colspan="6" class="empty">暂无反馈数据。</td></tr>
+              </tbody>
+              <tfoot v-if="feedbackSummary.length">
+                <tr class="fb-total-row">
+                  <td>总计</td>
+                  <td class="num fb-useful">{{ formatNumber(feedbackTotals.useful) }}</td>
+                  <td class="num fb-useless">{{ formatNumber(feedbackTotals.useless) }}</td>
+                  <td class="num">{{ formatNumber(feedbackTotals.feedback) }}</td>
+                  <td class="num">{{ formatNumber(feedbackTotals.total) }}</td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+
+          <!-- Recent feedback with filters + pagination -->
+          <div class="card table-card fb-recent-card">
+            <div class="card-head fb-recent-head">
+              <span>最近反馈</span>
+              <span class="fb-total-count">共 {{ feedbackFilteredTotal }} 条</span>
+            </div>
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th style="width: 130px;">时间</th>
+                  <th style="width: 92px;" class="fb-filter-th">
+                    分类
+                    <button class="fb-filter-arrow" :class="{ on: feedbackCatFilter }" @click="feedbackCatOpen = !feedbackCatOpen">{{ feedbackCatFilter ? categoryLabel(feedbackCatFilter) : '全部' }} ▾</button>
+                    <div class="fb-filter-menu" v-if="feedbackCatOpen" @click.stop>
+                      <button :class="{ sel: !feedbackCatFilter }" @click="setFeedbackCatFilter('')">全部</button>
+                      <button v-for="cat in CATEGORY_KEYS" :key="cat" :class="{ sel: feedbackCatFilter === cat }" @click="setFeedbackCatFilter(cat)">{{ categoryLabel(cat) }}</button>
+                    </div>
+                  </th>
+                  <th style="width: 82px;" class="fb-filter-th">
+                    类型
+                    <button class="fb-filter-arrow" :class="{ on: feedbackVoteFilter }" @click="feedbackFilterOpen = !feedbackFilterOpen">{{ feedbackVoteFilter ? voteLabel(feedbackVoteFilter) : '全部' }} ▾</button>
+                    <div class="fb-filter-menu" v-if="feedbackFilterOpen" @click.stop>
+                      <button :class="{ sel: !feedbackVoteFilter }" @click="setFeedbackFilter('')">全部</button>
+                      <button :class="{ sel: feedbackVoteFilter === 'useful' }" @click="setFeedbackFilter('useful')">有用</button>
+                      <button :class="{ sel: feedbackVoteFilter === 'useless' }" @click="setFeedbackFilter('useless')">没用</button>
+                      <button :class="{ sel: feedbackVoteFilter === 'feedback' }" @click="setFeedbackFilter('feedback')">反馈</button>
+                    </div>
+                  </th>
+                 <th>文章</th>
+                 <th style="width: 90px;">原因</th>
+                 <th>内容</th>
+                 <th style="width: 52px;">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="item in paginatedFeedbackRecent" :key="item.id">
+                  <td>{{ formatDateTime(item.created_at) }}</td>
+                  <td><span class="badge badge-gray">{{ categoryLabel(item.post_category) || '-' }}</span></td>
+                  <td><span class="badge" :class="voteBadgeClass(item.vote)">{{ voteLabel(item.vote) }}</span></td>
+                  <td class="fb-post-cell">
+                    <a v-if="item.post_url" :href="item.post_url" target="_blank" rel="noreferrer" class="fb-post-title">{{ item.post_title || '查看原文' }}</a>
+                    <span v-else class="fb-post-title muted">{{ item.post_title || '-' }}</span>
+                    <p v-if="item.post_summary" class="fb-post-summary">{{ item.post_summary }}</p>
+                    <div v-if="item.source_name" class="fb-post-source">来源：{{ item.source_name }}</div>
+                  </td>
+                  <td>{{ reasonLabel(item.reason) || '-' }}</td>
+                  <td class="fb-comment-cell">{{ item.comment || '-' }}</td>
+                  <td><button class="fb-delete-btn" title="删除此记录" @click="deleteFeedbackRecord(item)">✕</button></td>
+                </tr>
+                <tr v-if="!paginatedFeedbackRecent.length"><td colspan="7" class="empty">暂无反馈记录。</td></tr>
+              </tbody>
+            </table>
+            <div class="fb-pagination" v-if="feedbackTotalPages > 1">
+              <button :disabled="feedbackPage === 1" @click="feedbackPage = 1">«</button>
+              <button :disabled="feedbackPage === 1" @click="feedbackPage--">‹</button>
+              <button v-for="p in feedbackPageNumbers" :key="p" :class="{ active: p === feedbackPage }" @click="feedbackPage = p">{{ p }}</button>
+              <button :disabled="feedbackPage === feedbackTotalPages" @click="feedbackPage++">›</button>
+              <button :disabled="feedbackPage === feedbackTotalPages" @click="feedbackPage = feedbackTotalPages">»</button>
+            </div>
+          </div>
         </section>
 
+        </template>
+        <template v-if="activeView === 'dashboard'">
         <section id="content" class="section">
           <div class="section-title">内容分布</div>
           <div class="stats-row">
@@ -294,6 +401,7 @@
             <span>{{ errorMessage }}</span>
           </div>
         </section>
+        </template>
       </div>
     </main>
   </div>
@@ -303,6 +411,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import mermaid from 'mermaid'
 import { getHealth, getIngestionHealth, getJobSummary, getPostCategories, getSupport } from '../api.js'
+import { getFeedbackSummary, getFeedbackRecent, deleteFeedbackById } from '../api.js'
 
 const POLL_MS = 30000
 
@@ -410,9 +519,24 @@ export default {
     const ingestion = ref(null)
     const categories = ref(null)
     const support = ref(null)
+    const feedbackSummary = ref([])
+    const feedbackRecent = ref([])
+    const feedbackVoteFilter = ref('')
+    const feedbackFilterOpen = ref(false)
+    const feedbackCatFilter = ref('')
+    const feedbackCatOpen = ref(false)
+    const feedbackPage = ref(1)
+    const FEEDBACK_PAGE_SIZE = 20
+    const CATEGORY_KEYS = ['campus_activity', 'competition', 'volunteer', 'exam_certification', 'recruitment', 'lecture', 'graduate_study', 'other']
+    const CATEGORY_LABELS = {
+      campus_activity: '校园活动', competition: '学科竞赛', volunteer: '志愿公益',
+      exam_certification: '考试考证', recruitment: '就业招聘', lecture: '讲座论坛',
+      graduate_study: '升学留学', other: '其他',
+    }
     const errorMessage = ref('')
     const lastUpdated = ref(null)
     const activeSection = ref('overview')
+    const activeView = ref('dashboard')
     const mermaidEl = ref(null)
     let pollTimer = null
     let observer = null
@@ -422,10 +546,10 @@ export default {
       { id: 'queue', label: '队列' },
       { id: 'pipeline', label: '处理管线' },
       { id: 'activity', label: '24小时新增' },
-      { id: 'sources', label: '来源' },
-      { id: 'content', label: '内容分布' },
-      { id: 'guide', label: '使用说明' },
-    ]
+     { id: 'sources', label: '来源' },
+     { id: 'content', label: '内容分布' },
+     { id: 'guide', label: '使用说明' },
+   ]
 
     const healthTone = computed(() => {
       if (!health.value) return 'warn'
@@ -481,28 +605,111 @@ export default {
 
     const topSources = computed(() => (ingestion.value?.top_sources_inserted_24h || []).slice(0, 10))
 
+    const filteredFeedbackRecent = computed(() => {
+      let list = feedbackRecent.value
+      if (feedbackVoteFilter.value) list = list.filter((item) => item.vote === feedbackVoteFilter.value)
+      if (feedbackCatFilter.value) list = list.filter((item) => item.post_category === feedbackCatFilter.value)
+      return list
+    })
+
+    const feedbackFilteredTotal = computed(() => filteredFeedbackRecent.value.length)
+    const feedbackTotalPages = computed(() => Math.max(1, Math.ceil(feedbackFilteredTotal.value / FEEDBACK_PAGE_SIZE)))
+    const paginatedFeedbackRecent = computed(() => {
+      const start = (feedbackPage.value - 1) * FEEDBACK_PAGE_SIZE
+      return filteredFeedbackRecent.value.slice(start, start + FEEDBACK_PAGE_SIZE)
+    })
+    const feedbackPageNumbers = computed(() => {
+      const total = feedbackTotalPages.value
+      const cur = feedbackPage.value
+      const pages = []
+      let startPage = Math.max(1, cur - 2)
+      const endPage = Math.min(total, startPage + 4)
+      startPage = Math.max(1, endPage - 4)
+      for (let p = startPage; p <= endPage; p++) pages.push(p)
+      return pages
+    })
+
+    const feedbackTotals = computed(() => {
+      const totals = { useful: 0, useless: 0, feedback: 0, total: 0 }
+      for (const item of feedbackSummary.value) {
+        totals.useful += item.useful || 0
+        totals.useless += item.useless || 0
+        totals.feedback += item.feedback || 0
+      }
+      totals.total = totals.useful + totals.useless + totals.feedback
+      return totals
+    })
+
+    function setFeedbackFilter(vote) {
+      feedbackVoteFilter.value = vote
+      feedbackFilterOpen.value = false
+      feedbackPage.value = 1
+    }
+    function setFeedbackCatFilter(cat) {
+      feedbackCatFilter.value = cat
+      feedbackCatOpen.value = false
+      feedbackPage.value = 1
+    }
+    function categoryLabel(code) {
+      return CATEGORY_LABELS[code] || code || ''
+    }
+
+    function onDocClick(event) {
+      if (!event.target.closest('.fb-filter-th')) {
+        feedbackFilterOpen.value = false
+        feedbackCatOpen.value = false
+      }
+    }
+
+    async function deleteFeedbackRecord(item) {
+      if (!confirm(`确定删除这条反馈记录吗？\n类型：${voteLabel(item.vote)}${item.comment ? '\n内容：' + item.comment : ''}`)) return
+      try {
+        await deleteFeedbackById(item.id)
+        feedbackRecent.value = feedbackRecent.value.filter((r) => r.id !== item.id)
+        feedbackSummary.value = await getFeedbackSummary()
+      } catch (e) {
+        errorMessage.value = e?.response?.data?.detail || e?.message || '删除失败'
+      }
+    }
+
     async function loadAll() {
       const results = await Promise.allSettled([
         getHealth(),
         getJobSummary(),
         getIngestionHealth(),
         getPostCategories(),
-        getSupport('admin-status-board'),
-      ])
-      const [healthResult, queueResult, ingestionResult, categoriesResult, supportResult] = results
+      getSupport('admin-status-board'),
+      getFeedbackSummary(),
+      getFeedbackRecent(50),
+    ])
+      const [healthResult, queueResult, ingestionResult, categoriesResult, supportResult, feedbackSummaryResult, feedbackRecentResult] = results
       if (healthResult.status === 'fulfilled') health.value = healthResult.value
       if (queueResult.status === 'fulfilled') queue.value = queueResult.value
       if (ingestionResult.status === 'fulfilled') ingestion.value = ingestionResult.value
       if (categoriesResult.status === 'fulfilled') categories.value = categoriesResult.value
       if (supportResult.status === 'fulfilled') support.value = supportResult.value
+      if (feedbackSummaryResult.status === 'fulfilled') feedbackSummary.value = feedbackSummaryResult.value
+      if (feedbackRecentResult.status === 'fulfilled') feedbackRecent.value = feedbackRecentResult.value
       const rejected = results.find((result) => result.status === 'rejected')
       errorMessage.value = rejected ? (rejected.reason?.response?.data?.detail || rejected.reason?.message || '部分接口加载失败') : ''
       lastUpdated.value = new Date()
     }
 
     function scrollTo(id) {
-      document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      activeSection.value = id
+      activeView.value = 'dashboard'
+      nextTick(() => {
+        document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        activeSection.value = id
+      })
+    }
+    function goToFeedback() {
+      activeView.value = 'feedback'
+    }
+    function backToDashboard() {
+      activeView.value = 'dashboard'
+      nextTick(() => {
+        document.getElementById('overview')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      })
     }
     function initScrollSpy() {
       observer = new IntersectionObserver((entries) => {
@@ -538,6 +745,23 @@ export default {
     function participationHelp(value) { return PARTICIPATION_HELP[value] || '保留后端原始参与状态' }
     function timeStatusHelp(value) { return TIME_STATUS_HELP[value] || '保留后端原始时间状态' }
     function unknownTimeReasonHelp(value) { return UNKNOWN_TIME_REASON_HELP[value] || '保留后端原始原因' }
+    const VOTE_LABELS = { useful: '有用', useless: '没用', feedback: '反馈' }
+    const REASON_LABELS = {
+      not_activity: '不是活动', expired: '已过期', wrong_category: '分类错了',
+      other: '其他',
+    }
+    function voteLabel(value) { return VOTE_LABELS[value] || value || '' }
+    function reasonLabel(value) { return REASON_LABELS[value] || value || '' }
+    function topReason(reasons) {
+      if (!reasons) return ''
+      const entries = Object.entries(reasons).sort((a, b) => b[1] - a[1])
+      return entries.length ? reasonLabel(entries[0][0]) : ''
+    }
+    function voteBadgeClass(vote) {
+      if (vote === 'useful') return 'badge-green'
+      if (vote === 'useless') return 'badge-red'
+      return 'badge-blue'
+    }
     async function renderMermaid() {
       if (!mermaidEl.value) return
       try {
@@ -567,21 +791,42 @@ export default {
       initScrollSpy()
       nextTick(renderMermaid)
       pollTimer = window.setInterval(loadAll, POLL_MS)
+      document.addEventListener('click', onDocClick)
     })
     onUnmounted(() => {
       if (pollTimer) window.clearInterval(pollTimer)
       if (observer) observer.disconnect()
+      document.removeEventListener('click', onDocClick)
     })
 
-    return {
-      navItems,
-      activeSection,
-      health,
-      queue,
+   return {
+     navItems,
+     activeSection,
+     activeView,
+     health,
+     queue,
       ingestion,
       categories,
-      support,
-      errorMessage,
+     support,
+      feedbackSummary,
+     feedbackRecent,
+     feedbackVoteFilter,
+     feedbackFilterOpen,
+      feedbackCatFilter,
+      feedbackCatOpen,
+      feedbackPage,
+     filteredFeedbackRecent,
+      paginatedFeedbackRecent,
+      feedbackFilteredTotal,
+      feedbackTotalPages,
+      feedbackPageNumbers,
+      feedbackTotals,
+      CATEGORY_KEYS,
+      setFeedbackCatFilter,
+      categoryLabel,
+     setFeedbackFilter,
+      deleteFeedbackRecord,
+     errorMessage,
       mermaidEl,
       healthTone,
       healthLabel,
@@ -590,9 +835,11 @@ export default {
       queueRows,
       pipelineRows,
       hourlyRows,
-      topSources,
-      scrollTo,
-      formatNumber,
+     topSources,
+     scrollTo,
+     goToFeedback,
+     backToDashboard,
+     formatNumber,
       formatDateTime,
       statPairs,
       jobTypeLabel,
@@ -602,9 +849,13 @@ export default {
       unknownTimeReasonLabel,
       contentTypeHelp,
       participationHelp,
-      timeStatusHelp,
-      unknownTimeReasonHelp,
-    }
+     timeStatusHelp,
+     unknownTimeReasonHelp,
+     voteLabel,
+     voteBadgeClass,
+     reasonLabel,
+      topReason,
+   }
   },
 }
 </script>
@@ -1159,8 +1410,92 @@ export default {
     overflow-x: auto;
   }
 
-  .data-table {
+    .data-table {
     min-width: 560px;
   }
 }
+
+/* === Feedback Section === */
+.card-head {
+  padding: 12px 16px;
+  border-bottom: 1px solid #e5e7eb;
+  color: #6b7280;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.fb-reason-col { width: 120px; }
+.fb-reason-cell { font-size: 12px; color: #6b7280; }
+.fb-useful { color: #047857 !important; }
+.fb-useless { color: #dc2626 !important; }
+
+.fb-recent-card { margin-top: 16px; }
+.fb-comment-cell { color: #4b5563; font-size: 12px; }
+
+.fb-post-cell { min-width: 200px; max-width: 320px; }
+.fb-post-title { display: inline-block; font-size: 13px; font-weight: 600; color: #1d4ed8; text-decoration: none; }
+.fb-post-title:hover { text-decoration: underline; }
+.fb-post-title.muted { color: #6b7280; font-weight: 500; }
+.fb-post-summary { margin: 4px 0 0; font-size: 12px; color: #6b7280; line-height: 1.55; }
+
+/* Type filter dropdown on the 最近反馈 table */
+.fb-filter-th { position: relative; white-space: nowrap; }
+.fb-filter-arrow {
+  margin-left: 6px; padding: 2px 8px; border: 1px solid #d1d5db; border-radius: 6px;
+  background: #fff; color: #374151; font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.15s;
+}
+.fb-filter-arrow:hover { border-color: #6b7280; }
+.fb-filter-arrow.on { border-color: #1d4ed8; color: #1d4ed8; background: #eff6ff; }
+.fb-filter-menu {
+  position: absolute; top: 100%; left: 0; z-index: 50; margin-top: 4px;
+  background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+  display: flex; flex-direction: column; min-width: 96px; overflow: hidden;
+}
+.fb-filter-menu button {
+  padding: 8px 12px; border: none; background: #fff; color: #374151;
+  font-size: 12px; text-align: left; cursor: pointer;
+}
+.fb-filter-menu button:hover { background: #f3f4f6; }
+.fb-filter-menu button.sel { background: #eff6ff; color: #1d4ed8; font-weight: 700; }
+
+.fb-post-source { margin-top: 4px; text-align: right; font-size: 11px; color: #9ca3af; }
+
+.fb-recent-head { display: flex; justify-content: space-between; align-items: center; }
+.fb-total-count { font-size: 12px; font-weight: 600; color: #6b7280; }
+
+.fb-total-row td { font-weight: 800; background: #f9fafb; border-top: 2px solid #e5e7eb; }
+
+.fb-section { border-top: 3px solid #e5e7eb; padding-top: 8px; margin-top: 8px; }
+.fb-section-title { padding-bottom: 4px; }
+
+.fb-pagination { display: flex; gap: 4px; justify-content: center; padding: 12px 0 4px; flex-wrap: wrap; }
+.fb-pagination button {
+  min-width: 32px; height: 32px; border: 1px solid #d1d5db; border-radius: 6px;
+  background: #fff; color: #374151; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.15s;
+}
+.fb-pagination button:hover:not(:disabled) { border-color: #6b7280; background: #f9fafb; }
+.fb-pagination button:disabled { opacity: 0.4; cursor: default; }
+.fb-pagination button.active { border-color: #1d4ed8; background: #1d4ed8; color: #fff; }
+
+.fb-delete-btn {
+  width: 28px; height: 28px; border: 1px solid #fecaca; border-radius: 6px;
+  background: #fff; color: #dc2626; font-size: 14px; font-weight: 700; cursor: pointer; transition: all 0.15s;
+}
+.fb-delete-btn:hover { background: #dc2626; color: #fff; border-color: #dc2626; }
+
+.fb-back-btn {
+  display: inline-flex; align-items: center; gap: 4px; margin-bottom: 16px;
+  padding: 8px 16px; border: 1px solid #d1d5db; border-radius: 8px;
+  background: #fff; color: #374151; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.15s;
+}
+.fb-back-btn:hover { border-color: #1f2937; background: #f9fafb; }
+
+.sidebar-module { padding: 12px 16px; border-top: 1px solid #374151; }
+.sidebar-module-label { display: block; font-size: 10px; color: #9ca3af; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em; }
+.sidebar-module a {
+  display: block; padding: 8px 10px; border-radius: 6px; color: #d1d5db; text-decoration: none;
+  font-size: 14px; font-weight: 500; cursor: pointer; transition: all 0.15s;
+}
+.sidebar-module a:hover { background: #374151; color: #fff; }
+.sidebar-module a.active { background: #1d4ed8; color: #fff; }
 </style>

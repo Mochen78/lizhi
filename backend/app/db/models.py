@@ -201,6 +201,22 @@ class SupportClick(TimestampMixin, Base):
     client_token: Mapped[str] = mapped_column(String(128), unique=True, index=True)
 
 
+class PostFeedback(TimestampMixin, Base):
+    __tablename__ = "post_feedback"
+    __table_args__ = (
+        Index("ix_post_feedback_source_vote", "source_id", "vote"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    client_token: Mapped[str] = mapped_column(String(128), default="", index=True)
+    post_id: Mapped[int] = mapped_column(ForeignKey("posts.id"), nullable=True, index=True)
+    source_id: Mapped[int | None] = mapped_column(ForeignKey("sources.id"), nullable=True, index=True)
+    source_name: Mapped[str] = mapped_column(String(255), default="", index=True)
+    vote: Mapped[str] = mapped_column(String(32), index=True)
+    reason: Mapped[str] = mapped_column(String(64), default="")
+    comment: Mapped[str] = mapped_column(Text, default="")
+
+
 class DiscardedPost(Base):
     __tablename__ = "discarded_posts"
 

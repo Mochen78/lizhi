@@ -30,3 +30,18 @@ export const getSupport = (clientId) =>
 
 export const addSupport = (clientId) =>
   api.post('/support', { client_id: clientId }).then((r) => r.data)
+
+export const submitFeedback = (params) =>
+  api.post('/feedback', params).then((r) => r.data)
+
+export const deleteFeedback = (params) =>
+  api.delete('/feedback', { params }).then((r) => r.data)
+
+export const deleteFeedbackById = (id) =>
+  api.delete(`/feedback/${id}`).then((r) => r.data)
+
+export const getFeedbackSummary = () =>
+  api.get('/feedback/summary').then((r) => r.data)
+
+export const getFeedbackRecent = (limit = 200) =>
+  api.get('/feedback/recent', { params: { limit } }).then((r) => r.data)

@@ -135,7 +135,7 @@ class StubOcrClient:
     def __init__(self, text: str):
         self.text = text
 
-    def recognize_image_url(self, image_url: str) -> str:
+    def recognize_image_url(self, image_url: str, action=None) -> str:
         return self.text
 
 
@@ -703,3 +703,101 @@ def test_support_click_is_counted_once_per_client(tmp_path: Path):
     stats = client.get("/api/support", params={"client_id": client_id})
     stats.raise_for_status()
     assert stats.json() == {"count": 1, "liked": True, "incremented": False}
+
+
+def test_submit_useful_feedback(tmp_path: Path):
+    client = build_test_client(tmp_path)
+    resp = client.post("/api/feedback", json={
+        "client_id": "fb-client-1",
+        "post_id": 1,
+        "vote": "useful",
+    })
+    resp.raise_for_status()
+    data = resp.json()
+    assert data["received"] is True
+    assert data["vote"] == "useful"
+    assert data["source_name"] == "校园机会中心"
+
+
+def test_submit_useless_with_reason(tmp_path: Path):
+    client = build_test_client(tmp_path)
+    resp = client.post("/api/feedback", json={
+        "client_id": "fb-client-2",
+        "post_id": 1,
+        "vote": "useless",
+        "reason": "wrong_category",
+    })
+    resp.raise_for_status()
+    data = resp.json()
+    assert data["received"] is True
+    assert data["source_name"] == "校园机会中心"
+    recent = client.get("/api/feedback/recent", params={"limit": 10})
+    recent.raise_for_status()
+    items = recent.json()
+    assert items[0]["vote"] == "useless"
+    assert items[0]["reason"] == "wrong_category"
+
+
+def test_submit_text_feedback(tmp_path: Path):
+    client = build_test_client(tmp_path)
+    resp = client.post("/api/feedback", json={
+        "client_id": "fb-client-3",
+        "post_id": 1,
+        "vote": "feedback",
+        "comment": "希望加上报名链接",
+    })
+    resp.raise_for_status()
+    recent = client.get("/api/feedback/recent", params={"limit": 10})
+    recent.raise_for_status()
+    item = [r for r in recent.json() if r["vote"] == "feedback"][0]
+    assert item["comment"] == "希望加上报名链接"
+
+
+def test_feedback_summary_aggregation(tmp_path: Path):
+    client = build_test_client(tmp_path)
+    # Two useful from one client, one useless+reason from another
+    client.post("/api/feedback", json={"client_id": "c1", "post_id": 1, "vote": "useful"})
+    client.post("/api/feedback", json={"client_id": "c2", "post_id": 1, "vote": "useful"})
+    client.post("/api/feedback", json={"client_id": "c3", "post_id": 1, "vote": "useless", "reason": "expired"})
+    client.post("/api/feedback", json={"client_id": "c4", "post_id": 1, "vote": "useless", "reason": "expired"})
+    client.post("/api/feedback", json={"client_id": "c5", "post_id": 1, "vote": "feedback", "comment": "hi"})
+
+    resp = client.get("/api/feedback/summary")
+    resp.raise_for_status()
+    summary = resp.json()
+    assert len(summary) == 1
+    entry = summary[0]
+    assert entry["source_name"] == "校园机会中心"
+    assert entry["useful"] == 2
+    assert entry["useless"] == 2
+    assert entry["feedback"] == 1
+    assert entry["reasons"].get("expired") == 2
+
+
+def test_feedback_recent_ordered_desc(tmp_path: Path):
+    client = build_test_client(tmp_path)
+    client.post("/api/feedback", json={"client_id": "c1", "post_id": 1, "vote": "useful"})
+    client.post("/api/feedback", json={"client_id": "c2", "post_id": 1, "vote": "useless", "reason": "other"})
+
+    resp = client.get("/api/feedback/recent", params={"limit": 50})
+    resp.raise_for_status()
+    items = resp.json()
+    assert len(items) == 2
+    # Most recent first
+    assert items[0]["vote"] == "useless"
+    assert items[1]["vote"] == "useful"
+    assert items[0]["source_name"] == "校园机会中心"
+
+
+def test_feedback_invalid_vote_rejected(tmp_path: Path):
+    client = build_test_client(tmp_path)
+    resp = client.post("/api/feedback", json={
+        "client_id": "c1",
+        "post_id": 1,
+        "vote": "bogus",
+    })
+    resp.raise_for_status()
+    assert resp.json()["received"] is False
+    recent = client.get("/api/feedback/recent", params={"limit": 50})
+    recent.raise_for_status()
+    assert recent.json() == []

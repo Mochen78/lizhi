@@ -11,6 +11,7 @@ from fastapi import FastAPI
 import uvicorn
 
 from app.api.routes.health import router as health_router
+from app.api.routes.feedback import router as feedback_router
 from app.api.routes.jobs import router as jobs_router
 from app.api.routes.posts import router as posts_router
 from app.api.routes.sources import router as sources_router
@@ -122,6 +123,7 @@ def create_app(settings: Settings | None = None, connector=None) -> FastAPI:
     app.include_router(sync_router)
     app.include_router(jobs_router)
     app.include_router(support_router)
+    app.include_router(feedback_router)
     app.include_router(health_router)
     return app
 

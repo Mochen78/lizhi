@@ -114,6 +114,43 @@ class SupportResponse(BaseModel):
     incremented: bool = False
 
 
+class FeedbackRequest(BaseModel):
+    client_id: str
+    post_id: int
+    vote: str
+    reason: str = ""
+    comment: str = ""
+
+
+class FeedbackResponse(BaseModel):
+    received: bool
+    vote: str
+    source_name: str
+
+
+class FeedbackCategorySummary(BaseModel):
+    category: str
+    useful: int = 0
+    useless: int = 0
+    feedback: int = 0
+    reasons: dict[str, int] = {}
+
+
+class FeedbackRecentItem(BaseModel):
+    id: int
+    post_id: int | None
+    source_name: str
+    vote: str
+    reason: str
+    comment: str
+    created_at: datetime
+
+    post_title: str = ""
+    post_summary: str = ""
+    post_url: str = ""
+    post_category: str = ""
+
+
 class JobResponse(BaseModel):
     id: int
     job_type: str

@@ -233,9 +233,20 @@
                 <div v-if="post.event_end_at"><dt>{{ t.endTime }}</dt><dd>{{ formatDate(post.event_end_at) }}</dd></div>
                 <div v-if="post.deadline_at"><dt>{{ t.deadlineTime }}</dt><dd>{{ formatDate(post.deadline_at) }}</dd></div>
               </dl>
-              <a class="open-link" :href="post.original_url" target="_blank" rel="noreferrer">{{ t.viewOriginal }}</a>
-            </div>
-          </article>
+             <a class="open-link" :href="post.original_url" target="_blank" rel="noreferrer">{{ t.viewOriginal }}</a>
+           </div>
+           <div class="post-feedback" @click.stop>
+              <button class="fb-btn fb-btn--useful" :class="{ active: feedbackState[post.id] === 'useful' }" @click="markUseful(post)">
+               {{ feedbackState[post.id] === 'useful' ? '✓ ' + t.fbMarked : t.fbUseful }}
+             </button>
+              <button class="fb-btn fb-btn--useless" :class="{ active: feedbackState[post.id] === 'useless' }" @click="openUselessDialog(post)">
+               {{ feedbackState[post.id] === 'useless' ? '✓ ' + t.fbDone : t.fbUseless }}
+             </button>
+              <button class="fb-btn fb-btn--feedback" :class="{ active: feedbackState[post.id] === 'feedback' }" @click="openFeedbackDialog(post)">
+               {{ feedbackState[post.id] === 'feedback' ? '✓ ' + t.fbDone : t.fbBtn }}
+             </button>
+           </div>
+         </article>
 
           <div class="load-more-wrap" v-if="posts.length && posts.length < total">
             <button class="ghost" :disabled="loadingMore" @click="loadMore">
@@ -257,6 +268,54 @@
       <div class="footer-brand">{{ t.appName }} · {{ t.tagline }}</div>
       <div class="footer-team">{{ t.devTeam }}</div>
     </footer>
+
+    <!-- Feedback Dialog -->
+    <div class="fb-overlay" v-if="showFeedbackDialog">
+      <div class="fb-backdrop" @click="showFeedbackDialog = false"></div>
+      <div class="fb-modal">
+        <button class="fb-modal-close" @click="showFeedbackDialog = false">&times;</button>
+        <h3>{{ t.fbTitle }}</h3>
+        <textarea v-model="feedbackComment" :placeholder="t.fbPlaceholder" maxlength="500" rows="4"></textarea>
+        <div class="fb-modal-actions">
+          <button class="fb-modal-cancel" @click="showFeedbackDialog = false">{{ t.fbCancel }}</button>
+          <button class="fb-modal-submit" :disabled="!feedbackComment.trim() || feedbackBusy" @click="submitTextFeedback">{{ t.fbSubmit }}</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Useless Reason Dialog -->
+    <div class="fb-overlay" v-if="showUselessDialog">
+      <div class="fb-backdrop" @click="showUselessDialog = false"></div>
+      <div class="fb-modal">
+        <button class="fb-modal-close" @click="showUselessDialog = false">&times;</button>
+        <h3>{{ t.fbUselessTitle }}</h3>
+        <div class="fb-reason-list">
+          <button
+            v-for="reason in FEEDBACK_REASONS"
+            :key="reason"
+            class="fb-reason-chip"
+            :class="{ active: feedbackReason === reason }"
+            @click="feedbackReason = reason"
+          >
+           {{ feedbackReasonLabel(reason) }}
+          </button>
+        </div>
+        <textarea
+          v-if="feedbackReason === 'other'"
+          v-model="feedbackOtherText"
+          :placeholder="t.fbOtherPlaceholder"
+          maxlength="500"
+          rows="3"
+        ></textarea>
+        <div class="fb-modal-actions">
+          <button class="fb-modal-cancel" @click="showUselessDialog = false">{{ t.fbCancel }}</button>
+          <button class="fb-modal-submit" :disabled="!feedbackReason || (feedbackReason === 'other' && !feedbackOtherText.trim()) || feedbackBusy" @click="submitUseless">{{ t.fbSubmit }}</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Feedback Toast -->
+    <div class="fb-toast" v-if="feedbackToast">{{ feedbackToast }}</div>
   </div>
   </template>
 </template>
@@ -264,6 +323,7 @@
 <script>
 import { computed, onMounted, ref } from 'vue'
 import { addSupport, getPostCategories, getPosts, getSupport, syncNow } from './api.js'
+import { submitFeedback, deleteFeedback } from './api.js'
 import AdminStatus from './components/AdminStatus.vue'
 
 const I18N = {
@@ -287,6 +347,13 @@ const I18N = {
     campus_activity: '校园活动', lecture: '讲座论坛', volunteer: '志愿公益',
     competition: '学科竞赛', recruitment: '就业招聘', graduate_study: '升学留学',
     exam_certification: '考试考证', other: '其他',
+    fbUseful: '有用', fbUseless: '没用', fbBtn: '反馈',
+    fbTitle: '告诉我们你的想法', fbPlaceholder: '你觉得哪里可以改进？',
+    fbSubmit: '提交', fbCancel: '取消', fbUselessTitle: '为什么不满意？',
+    fbOtherPlaceholder: '请补充具体原因',
+    fbOtherRequired: '请补充具体内容',
+    fbRequired: '请填写反馈内容',
+    fbDone: '已反馈', fbMarked: '已标记有用', fbUnmarked: '已取消标记', fbThanks: '感谢反馈！',
   },
   en: {
     appName: 'Lizhi', tagline: 'SZU Campus Info Hub', syncNow: 'Sync Now', syncing: 'Syncing...',
@@ -308,6 +375,13 @@ const I18N = {
     campus_activity: 'Campus Activity', lecture: 'Lecture Forum', volunteer: 'Volunteer',
     competition: 'Competition', recruitment: 'Recruitment', graduate_study: 'Graduate Study',
     exam_certification: 'Certification Exam', other: 'Other',
+    fbUseful: 'Useful', fbUseless: 'Not useful', fbBtn: 'Feedback',
+    fbTitle: 'Tell us what you think', fbPlaceholder: 'How can we improve?',
+    fbSubmit: 'Submit', fbCancel: 'Cancel', fbUselessTitle: 'Why are you not satisfied?',
+    fbOtherPlaceholder: 'Please describe the specific reason',
+    fbOtherRequired: 'Please provide details',
+    fbRequired: 'Please enter your feedback',
+    fbDone: 'Feedback sent', fbMarked: 'Marked useful', fbUnmarked: 'Unmarked useful', fbThanks: 'Thanks for the feedback!',
   },
 }
 
@@ -328,6 +402,21 @@ function getSupportClientId() {
     localStorage.setItem(SUPPORT_CLIENT_KEY, clientId)
   }
   return clientId
+}
+
+const FEEDBACK_REASONS = ['not_activity', 'expired', 'wrong_category', 'other']
+
+const FEEDBACK_REASON_ZH = {
+  not_activity: '不是活动',
+  expired: '已过期',
+  wrong_category: '分类错了',
+  other: '其他',
+}
+const FEEDBACK_REASON_EN = {
+  not_activity: 'Not an activity',
+  expired: 'Expired',
+  wrong_category: 'Wrong category',
+  other: 'Other',
 }
 
 export default {
@@ -353,6 +442,18 @@ export default {
     const supportBusy = ref(false)
     const supportPulse = ref(false)
     const supportFloatKey = ref(0)
+
+    // Feedback state
+    const feedbackState = ref({})
+    const showFeedbackDialog = ref(false)
+    const showUselessDialog = ref(false)
+    const activeFeedbackPost = ref(null)
+    const feedbackComment = ref('')
+    const feedbackReason = ref('')
+    const feedbackOtherText = ref('')
+    const feedbackBusy = ref(false)
+    const feedbackToast = ref('')
+    let feedbackToastTimer = null
 
     const lang = ref(localStorage.getItem('lizhi-lang') || 'zh')
     const darkMode = ref(localStorage.getItem('lizhi-dark') === 'true')
@@ -581,8 +682,84 @@ export default {
         }
         if (supportLiked.value) localStorage.setItem(SUPPORT_LIKED_KEY, '1')
       } finally {
-        supportBusy.value = false
+       supportBusy.value = false
+     }
+   }
+
+    function showFeedbackToast(msg) {
+      feedbackToast.value = msg
+      if (feedbackToastTimer) window.clearTimeout(feedbackToastTimer)
+      feedbackToastTimer = window.setTimeout(() => { feedbackToast.value = '' }, 2500)
+    }
+
+    function markUseful(post) {
+      const current = feedbackState.value[post.id]
+      if (current === 'useful') {
+        feedbackState.value = { ...feedbackState.value, [post.id]: '' }
+        try {
+          deleteFeedback({ client_id: getSupportClientId(), post_id: post.id, vote: 'useful' })
+          showFeedbackToast(t.value.fbUnmarked)
+        } catch { feedbackState.value = { ...feedbackState.value, [post.id]: 'useful' } }
+      } else if (!current) {
+        feedbackState.value = { ...feedbackState.value, [post.id]: 'useful' }
+        try {
+          submitFeedback({ client_id: getSupportClientId(), post_id: post.id, vote: 'useful' })
+          showFeedbackToast(t.value.fbThanks)
+        } catch { feedbackState.value = { ...feedbackState.value, [post.id]: '' } }
       }
+    }
+
+    function openUselessDialog(post) {
+      if (feedbackState.value[post.id]) return
+      activeFeedbackPost.value = post
+      feedbackReason.value = ''
+      feedbackOtherText.value = ''
+      showUselessDialog.value = true
+    }
+
+    function openFeedbackDialog(post) {
+      if (feedbackState.value[post.id] === 'feedback') return
+      activeFeedbackPost.value = post
+      feedbackComment.value = ''
+      showFeedbackDialog.value = true
+    }
+
+    async function submitUseless() {
+      if (!activeFeedbackPost.value || !feedbackReason.value || feedbackBusy.value) return
+      if (feedbackReason.value === 'other' && !feedbackOtherText.value.trim()) {
+        showFeedbackToast(t.value.fbOtherRequired)
+        return
+      }
+      feedbackBusy.value = true
+      try {
+        const post = activeFeedbackPost.value
+        const comment = feedbackReason.value === 'other' ? feedbackOtherText.value.trim() : ''
+        await submitFeedback({ client_id: getSupportClientId(), post_id: post.id, vote: 'useless', reason: feedbackReason.value, comment })
+        feedbackState.value = { ...feedbackState.value, [post.id]: 'useless' }
+        showUselessDialog.value = false
+        showFeedbackToast(t.value.fbThanks)
+      } catch { showFeedbackToast(t.value.fbDone) } finally { feedbackBusy.value = false }
+    }
+
+    async function submitTextFeedback() {
+      if (!activeFeedbackPost.value || feedbackBusy.value) return
+      if (!feedbackComment.value.trim()) {
+        showFeedbackToast(t.value.fbRequired)
+        return
+      }
+      feedbackBusy.value = true
+      try {
+        const post = activeFeedbackPost.value
+        await submitFeedback({ client_id: getSupportClientId(), post_id: post.id, vote: 'feedback', comment: feedbackComment.value })
+        feedbackState.value = { ...feedbackState.value, [post.id]: 'feedback' }
+        showFeedbackDialog.value = false
+        showFeedbackToast(t.value.fbThanks)
+      } catch { showFeedbackToast(t.value.fbDone) } finally { feedbackBusy.value = false }
+    }
+
+    function feedbackReasonLabel(reason) {
+      const map = lang.value === 'zh' ? FEEDBACK_REASON_ZH : FEEDBACK_REASON_EN
+      return map[reason] || reason
     }
 
     onMounted(async () => {
@@ -600,6 +777,11 @@ export default {
       categoryOptions, activeFilterChips, syncMetrics, categoryLabel, displayCategory, deadlineTone, deadlineLabel, keyTimeTone, keyTimeLabel, keyTimeName,
       toggleLang, toggleDark, dismissGuide, nextGuideStep,
       applyFilters, clearSearch, clearAllFilters, removeFilterChip, setCategory, setSort, setTimeRange, toggleExpand, loadMore, runSync, supportProject, formatDate, hasAnyTime,
+      feedbackState, showFeedbackDialog, showUselessDialog, activeFeedbackPost,
+      feedbackComment, feedbackReason, feedbackBusy, feedbackToast, FEEDBACK_REASONS,
+      feedbackOtherText,
+      markUseful, openUselessDialog, openFeedbackDialog, submitUseless, submitTextFeedback,
+      feedbackReasonLabel,
     }
   },
 }
@@ -1075,6 +1257,7 @@ button, input, select { font: inherit; }
 .detail-card h2 {
   margin: 12px 0 10px;
   line-height: 1.35;
+  font-size: 23px;
   font-family: var(--title-font);
   transition: color 0.2s;
 }
@@ -1084,6 +1267,7 @@ button, input, select { font: inherit; }
 
 .summary, .detail-summary {
   color: var(--muted);
+  font-size: 20px;
   line-height: 1.7;
 }
 
@@ -1726,4 +1910,218 @@ button, input, select { font: inherit; }
     text-align: right;
   }
 }
+
+/* === Post Feedback Bar === */
+.post-feedback {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+.fb-btn {
+  flex: 0 0 auto;
+  height: 24px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 100px;
+  background: transparent;
+  color: var(--muted);
+ font-family: var(--tag-font);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+
+.fb-btn:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: rgba(90, 143, 92, 0.08);
+}
+
+.fb-btn.active {
+  border-color: var(--primary);
+  background: rgba(90, 143, 92, 0.12);
+  color: var(--primary);
+}
+
+/* Per-button color variants */
+.fb-btn--useful { color: #2e5d31; border-color: rgba(46, 93, 49, 0.35); background: rgba(46, 93, 49, 0.07); }
+.fb-btn--useful:hover { border-color: #2e5d31; color: #2e5d31; background: rgba(46, 93, 49, 0.12); }
+.fb-btn--useful.active { border-color: #2e5d31; background: rgba(46, 93, 49, 0.18); color: #2e5d31; }
+
+.fb-btn--useless { color: #c2653f; border-color: rgba(194, 101, 63, 0.35); background: rgba(194, 101, 63, 0.07); }
+.fb-btn--useless:hover { border-color: #c2653f; color: #c2653f; background: rgba(194, 101, 63, 0.12); }
+.fb-btn--useless.active { border-color: #c2653f; background: rgba(194, 101, 63, 0.18); color: #c2653f; }
+
+.fb-btn--feedback { color: #3b7ea8; border-color: rgba(59, 126, 168, 0.35); background: rgba(59, 126, 168, 0.07); }
+.fb-btn--feedback:hover { border-color: #3b7ea8; color: #3b7ea8; background: rgba(59, 126, 168, 0.12); }
+.fb-btn--feedback.active { border-color: #3b7ea8; background: rgba(59, 126, 168, 0.18); color: #3b7ea8; }
+
+/* === Feedback Dialogs === */
+.fb-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.fb-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(2px);
+}
+
+.fb-modal {
+  position: relative;
+  background: #fff;
+  border-radius: 20px;
+  padding: 28px 28px 22px;
+  max-width: 400px;
+  width: 90%;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+  animation: fbModalIn 0.3s ease;
+}
+
+@keyframes fbModalIn {
+  from { opacity: 0; transform: translateY(20px) scale(0.95); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.fb-modal-close {
+  position: absolute;
+  top: 12px;
+  right: 16px;
+  background: none;
+  border: none;
+  font-size: 22px;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.fb-modal h3 {
+  margin: 0 0 16px;
+  font-family: var(--title-font);
+  font-size: 18px;
+  color: var(--primary);
+}
+
+.fb-modal textarea {
+  width: 100%;
+  border: 1.5px solid var(--line);
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-family: inherit;
+  font-size: 14px;
+  resize: vertical;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.fb-modal textarea:focus {
+  border-color: var(--primary);
+}
+
+.fb-reason-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.fb-reason-chip {
+  padding: 8px 16px;
+  border: 1.5px solid var(--line);
+  border-radius: 100px;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--tag-font);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.fb-reason-chip:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.fb-reason-chip.active {
+  border-color: var(--primary);
+  background: rgba(90, 143, 92, 0.12);
+  color: var(--primary);
+}
+
+.fb-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.fb-modal-cancel {
+  padding: 8px 20px;
+  border-radius: 100px;
+  border: 1.5px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--tag-font);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.fb-modal-cancel:hover {
+  border-color: var(--muted);
+  color: var(--text);
+}
+
+.fb-modal-submit {
+  padding: 8px 20px;
+  border-radius: 100px;
+  border: none;
+  background: var(--primary);
+  color: #fff;
+  font-family: var(--tag-font);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.fb-modal-submit:hover { opacity: 0.9; }
+.fb-modal-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* === Feedback Toast === */
+.fb-toast {
+  position: fixed;
+  bottom: 32px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10000;
+  padding: 12px 24px;
+  border-radius: 100px;
+  background: var(--primary);
+  color: #fff;
+  font-family: var(--tag-font);
+  font-size: 14px;
+  font-weight: 700;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  animation: fbToastIn 0.3s ease;
+}
+
+@keyframes fbToastIn {
+  from { opacity: 0; transform: translate(-50%, 20px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+/* === Dark Mode Feedback === */
+.app-shell.dark .fb-modal { background: var(--card); }
+.app-shell.dark .fb-modal textarea { background: var(--soft); color: var(--text); }
 </style>
